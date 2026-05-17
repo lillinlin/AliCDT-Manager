@@ -38,27 +38,12 @@ AliyunBSSFullAccess
 ```bash
 mkdir -p /app/alicdt-manager/data && cd /app/alicdt-manager
 ```
-
 ```bash
-SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
-
-cat > docker-compose.yml << EOF
-services:
-  alicdt-manager:
-    image: ghcr.io/lillinlin/alicdt-manager:latest
-    container_name: alicdt-manager
-    restart: always
-    ports:
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - TZ=Asia/Shanghai
-      - SECRET_KEY=${SECRET_KEY}
-EOF
-EOF
+echo "SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)" > .env
 ```
-
+```bash
+curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/docker-compose.yml -o docker-compose.yml
+```
 ```bash
 docker compose up -d
 ```

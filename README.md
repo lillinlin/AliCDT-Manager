@@ -40,9 +40,11 @@ mkdir -p /app/alicdt-manager/data && cd /app/alicdt-manager
 ```
 
 ```bash
+SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
+
 cat > docker-compose.yml << EOF
 services:
-  aliyun-guard:
+  alicdt-manager:
     image: ghcr.io/lillinlin/alicdt-manager:latest
     container_name: alicdt-manager
     restart: always
@@ -52,9 +54,8 @@ services:
       - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=your_password
-      - SECRET_KEY=your_random_secret
+      - SECRET_KEY=${SECRET_KEY}
+EOF
 EOF
 ```
 

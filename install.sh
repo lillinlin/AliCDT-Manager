@@ -5,13 +5,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-GITHUB_USER="lillinlin"
 IMAGE="ghcr.io/lillinlin/alicdt-manager:latest"
 INSTALL_DIR="/app/alicdt-manager"
 
-echo -e "${GREEN}=================================="
-echo "   Aliyun Guard 一键安装"
-echo -e "==================================${NC}"
+echo -e "${GREEN}=============================="
+echo "   AliCDT Manager 一键安装"
+echo -e "==============================${NC}"
 
 if ! command -v docker &> /dev/null; then
     echo -e "${YELLOW}正在安装 Docker...${NC}"
@@ -21,17 +20,16 @@ fi
 
 mkdir -p "$INSTALL_DIR/data" && cd "$INSTALL_DIR"
 
-read -p "用户名 [admin]: " ADMIN_USER; ADMIN_USER=${ADMIN_USER:-admin}
-read -s -p "密码 [admin123]: " ADMIN_PASS; echo; ADMIN_PASS=${ADMIN_PASS:-admin123}
-read -p "服务端口 [8000]: " PORT; PORT=${PORT:-8000}
+read -p "服务端口 [8000]: " PORT
+PORT=${PORT:-8000}
 
-SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32)
+SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
 
-cat > docker-compose.yml << EOF
+cat > docker-compose.yml << COMPOSEEOF
 services:
-  aliyun-guard:
+  alicdt-manager:
     image: ${IMAGE}
-    container_name: aliyun-guard
+    container_name: alicdt-manager
     restart: always
     ports:
       - "127.0.0.1:${PORT}:8000"
@@ -39,16 +37,13 @@ services:
       - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_USERNAME=${ADMIN_USER}
-      - ADMIN_PASSWORD=${ADMIN_PASS}
       - SECRET_KEY=${SECRET_KEY}
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-EOF
+COMPOSEEOF
 
-docker compose pull && docker compose up -d
+docker compose pull
+docker compose up -d
 
-echo -e "${GREEN}=================================="
-echo "   安装完成！端口: ${PORT} 用户名: ${ADMIN_USER}"
-echo -e "==================================${NC}"
+echo -e "${GREEN}=============================="
+echo "   安装完成！端口: ${PORT}"
+echo "   首次访问请设置管理员账号"
+echo -e "==============================${NC}"

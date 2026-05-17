@@ -1,17 +1,13 @@
 services:
-  aliyun-guard:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/aliyun-guard:latest
-    container_name: aliyun-guard
+  alicdt-manager:
+    image: ghcr.io/lillinlin/alicdt-manager:latest
+    container_name: alicdt-manager
     restart: always
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
+    env_file:
+      - .env
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
-      - SECRET_KEY=change-this-to-a-random-string
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1

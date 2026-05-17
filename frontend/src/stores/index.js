@@ -1,0 +1,106 @@
+import { defineStore } from 'pinia'
+import axios from 'axios'
+import { ref } from 'vue'
+
+const api = axios.create({ baseURL: '/api' })
+api.interceptors.request.use(cfg => {
+  const token = localStorage.getItem('token')
+  if (token) cfg.headers.Authorization = `Bearer ${token}`
+  return cfg
+})
+api.interceptors.response.use(r => r, err => {
+  if (err.response?.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/login'
+  }
+  return Promise.reject(err)
+})
+
+export const useStore = defineStore('main', () => {
+  const instances = ref([])
+  const accounts = ref([])
+  const logs = ref([])
+  const settings = ref({})
+  const loading = ref(false)
+
+  async function login(username, password) {
+    const { data } = await api.post('/auth/login', { username, password })
+    localStorage.setItem('token', data.token)
+    return data
+  }
+
+  async function fetchInstances() {
+    const { data } = await api.get('/instances')
+    instances.value = data
+  }
+
+  async function fetchAccounts() {
+    const { data } = await api.get('/accounts')
+    accounts.value = data
+  }
+
+  async function fetchLogs(category = null) {
+    const params = category ? { category } : {}
+    const { data } = await api.get('/logs', { params })
+    logs.value = data
+  }
+
+  async function fetchSettings() {
+    const { data } = await api.get('/settings')
+    settings.value = data
+  }
+
+  async function syncAll() {
+    loading.value = true
+    await api.post('/instances/sync')
+    await fetchInstances()
+    loading.value = false
+  }
+
+  async function controlInstance(instanceId, action) {
+    await api.post(`/instances/${instanceId}/${action}`)
+    setTimeout(fetchInstances, 2000)
+  }
+
+  async function releaseInstance(instanceId) {
+    await api.delete(`/instances/${instanceId}`)
+    await fetchInstances()
+  }
+
+  async function getBilling(accountId) {
+    const { data } = await api.get(`/billing/${accountId}`)
+    return data
+  }
+
+  async function createAccount(payload) {
+    await api.post('/accounts', payload)
+    await fetchAccounts()
+  }
+
+  async function updateAccount(id, payload) {
+    await api.put(`/accounts/${id}`, payload)
+    await fetchAccounts()
+  }
+
+  async function deleteAccount(id) {
+    await api.delete(`/accounts/${id}`)
+    await fetchAccounts()
+  }
+
+  async function saveSettings(items) {
+    await api.post('/settings', items)
+    await fetchSettings()
+  }
+
+  async function clearLogs(category = null) {
+    await api.delete('/logs', { params: category ? { category } : {} })
+    await fetchLogs()
+  }
+
+  return {
+    instances, accounts, logs, settings, loading,
+    login, fetchInstances, fetchAccounts, fetchLogs, fetchSettings,
+    syncAll, controlInstance, releaseInstance, getBilling,
+    createAccount, updateAccount, deleteAccount, saveSettings, clearLogs,
+  }
+})

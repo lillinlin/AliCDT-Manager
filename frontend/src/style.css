@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  background: #0a0a0f;
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 2px; }
+
+.glass {
+  background: rgba(22, 22, 31, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.card {
+  background: #16161f;
+  border: 1px solid #1e1e2e;
+  border-radius: 1rem;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.btn-primary {
+  @apply bg-accent hover:bg-accent-light text-white px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200;
+  box-shadow: 0 0 20px rgba(99,102,241,0.2);
+}
+
+.btn-ghost {
+  @apply text-text-muted hover:text-text hover:bg-white/5 px-3 py-2 rounded-lg text-sm transition-all duration-200;
+}
+
+.btn-danger {
+  @apply bg-danger/10 hover:bg-danger/20 text-danger px-3 py-2 rounded-lg text-sm transition-all duration-200;
+}
+
+.input {
+  @apply bg-surface border border-border rounded-xl px-4 py-2.5 text-text text-sm w-full outline-none focus:border-accent transition-colors duration-200;
+}
+
+.badge-running { @apply text-xs px-2 py-0.5 rounded-full bg-success/10 text-success; }
+.badge-stopped { @apply text-xs px-2 py-0.5 rounded-full bg-danger/10 text-danger; }
+.badge-unknown { @apply text-xs px-2 py-0.5 rounded-full bg-muted/20 text-text-muted; }
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.3); }
+  50% { box-shadow: 0 0 20px rgba(99,102,241,0.6); }
+}
+.glow-pulse { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.3s ease-out; }

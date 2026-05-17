@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from typing import Optional, List
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -16,8 +16,7 @@ from models.database import init_db, get_db, Account, Instance, BillingCache, Lo
 from core.aliyun import AliyunClient
 from scheduler.jobs import start_scheduler, sync_instances, traffic_check, add_log
 
-# ==================== Auth ====================
-SECRET_KEY = os.environ.get("SECRET_KEY", "aliyun-guard-secret-change-me")
+SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-change-me")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -43,8 +42,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token无效或已过期")
     return user
 
-# ==================== App ====================
-app = FastAPI(title="Aliyun Guard", version="1.0.0")
+app = FastAPI(title="AliCDT Manager", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,17 +54,9 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     await init_db()
-    # 初始化默认密码
-    async with __import__('models.database', fromlist=['AsyncSessionLocal']).AsyncSessionLocal() as db:
-        result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
-        if not result.scalar_one_or_none():
-            hashed = pwd_context.hash(os.environ.get("ADMIN_PASSWORD", "admin123"))
-            db.add(Settings(key="admin_password_hash", value=hashed))
-            db.add(Settings(key="admin_username", value=os.environ.get("ADMIN_USERNAME", "admin")))
-            await db.commit()
     start_scheduler()
 
-# ==================== Pydantic Schemas ====================
+# ==================== Pydantic ====================
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -92,6 +82,25 @@ class SettingUpdate(BaseModel):
     key: str
     value: str
 
+# ==================== 初始化 ====================
+@app.get("/api/auth/initialized")
+async def is_initialized(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
+    return {"initialized": result.scalar_one_or_none() is not None}
+
+@app.post("/api/auth/init")
+async def init_admin(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="已初始化，请直接登录")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少6位")
+    hashed = pwd_context.hash(req.password)
+    db.add(Settings(key="admin_username", value=req.username))
+    db.add(Settings(key="admin_password_hash", value=hashed))
+    await db.commit()
+    return {"token": create_token(req.username), "username": req.username}
+
 # ==================== 认证 ====================
 @app.post("/api/auth/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -99,15 +108,13 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     username_row = result.scalar_one_or_none()
     result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
     password_row = result.scalar_one_or_none()
-
     if not username_row or not password_row:
-        raise HTTPException(status_code=500, detail="系统未初始化")
+        raise HTTPException(status_code=403, detail="系统未初始化")
     if req.username != username_row.value or not pwd_context.verify(req.password, password_row.value):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-
     return {"token": create_token(req.username), "username": req.username}
 
-# ==================== 账户管理 ====================
+# ==================== 账户 ====================
 @app.get("/api/accounts")
 async def list_accounts(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Account))
@@ -214,7 +221,6 @@ async def get_billing(account_id: int, user=Depends(get_current_user), db: Async
 async def get_settings(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
     rows = result.scalars().all()
-    # 不返回密码hash
     return {r.key: r.value for r in rows if "password_hash" not in r.key}
 
 @app.post("/api/settings")

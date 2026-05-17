@@ -1,4 +1,4 @@
-# 🛡️ Aliyun Guard
+# 🛡️ AliCDT-Manager
 
 阿里云 CDT 流量监控与自动化管理控制台。
 
@@ -36,13 +36,15 @@ AliyunBSSFullAccess
 ## 🛠 手动部署
 
 ```bash
-mkdir -p /app/aliyun-guard/data && cd /app/aliyun-guard
+mkdir -p /app/alicdt-manager/data && cd /app/alicdt-manager
+```
 
+```bash
 cat > docker-compose.yml << EOF
 services:
   aliyun-guard:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/aliyun-guard:latest
-    container_name: aliyun-guard
+    image: ghcr.io/lillinlin/alicdt-manager:latest
+    container_name: alicdt-manager
     restart: always
     ports:
       - "127.0.0.1:8000:8000"
@@ -54,7 +56,9 @@ services:
       - ADMIN_PASSWORD=your_password
       - SECRET_KEY=your_random_secret
 EOF
+```
 
+```bash
 docker compose up -d
 ```
 

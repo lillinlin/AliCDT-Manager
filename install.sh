@@ -5,9 +5,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-GITHUB_USER="YOUR_GITHUB_USERNAME"
-IMAGE="ghcr.io/${GITHUB_USER}/aliyun-guard:latest"
-INSTALL_DIR="/app/aliyun-guard"
+GITHUB_USER="lillinlin"
+IMAGE="ghcr.io/lillinlin/alicdt-manager:latest"
+INSTALL_DIR="/app/alicdt-manager"
 
 echo -e "${GREEN}=================================="
 echo "   Aliyun Guard 一键安装"

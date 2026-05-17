@@ -45,6 +45,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
+            type=sha,prefix=
 
       - name: Build and Push
         uses: docker/build-push-action@v5
@@ -54,4 +55,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          

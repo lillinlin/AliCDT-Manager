@@ -23,30 +23,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/mai
 
 ## 🔑 所需 RAM 权限
 
-```json
-{
-  "Version": "1",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecs:DescribeInstances", "ecs:DescribeInstanceStatus",
-        "ecs:StartInstance", "ecs:StopInstance", "ecs:DeleteInstance"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["cdt:ListCdtInternetTraffic", "cms:DescribeMetricList"],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["bssapi:QueryAccountBalance", "bssapi:QueryBillOverview"],
-      "Resource": "*"
-    }
-  ]
-}
+```bash
+AliyunECSFullAccess
+```
+```bash
+AliyunCDTFullAccess
+```
+```bash
+AliyunBSSFullAccess
 ```
 
 ## 🛠 手动部署

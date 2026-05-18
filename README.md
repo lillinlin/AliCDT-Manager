@@ -10,7 +10,6 @@
 - 定时开关机计划
 - Telegram 告警通知
 - 账单统计（待还款金额，国际站准确）
-- 现代化暗色 UI
 
 ## 🔑 所需 RAM 权限
 
@@ -30,7 +29,10 @@ AliyunBSSFullAccess
 bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/install.sh)
 ```
 
-安装完成后配置 Nginx 反代即可通过域名访问。
+docker-compose.yml 默认端口为
+ports:
+     - "127.0.0.1:8000:8000"
+在安装完成需要配置 Nginx 反代通过域名访问
 
 
 ## 🛠 手动部署

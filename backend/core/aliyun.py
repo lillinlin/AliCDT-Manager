@@ -1,4 +1,3 @@
-import json
 import hashlib
 import hmac
 import base64
@@ -7,7 +6,6 @@ from datetime import datetime, timezone
 from typing import Optional
 import httpx
 import urllib.parse
-
 
 BSS_ENDPOINTS = {
     "china": "business.aliyuncs.com",
@@ -23,9 +21,6 @@ ECS_ENDPOINTS = {
     "cn-hongkong": "ecs.cn-hongkong.aliyuncs.com",
     "eu-central-1": "ecs.eu-central-1.aliyuncs.com",
 }
-
-CMS_ENDPOINT = "metrics.aliyuncs.com"
-CDT_ENDPOINT = "cdt.aliyuncs.com"
 
 
 def _sign(key_secret: str, string_to_sign: str) -> str:
@@ -75,12 +70,8 @@ class AliyunClient:
         self.bss_host = BSS_ENDPOINTS.get(site_type, BSS_ENDPOINTS["international"])
         self.ecs_host = ECS_ENDPOINTS.get(region_id, f"ecs.{region_id}.aliyuncs.com")
 
-    # ==================== 余额 ====================
     async def get_balance(self) -> dict:
-        params = _build_params(
-            "QueryAccountBalance", self.key_id, self.key_secret,
-            "2017-12-14", {}
-        )
+        params = _build_params("QueryAccountBalance", self.key_id, self.key_secret, "2017-12-14", {})
         data = await _post(self.bss_host, params)
         d = data.get("Data", {})
         return {
@@ -88,7 +79,6 @@ class AliyunClient:
             "currency": d.get("Currency", "USD"),
         }
 
-    # ==================== 账单（待还款） ====================
     async def get_bill_overview(self, billing_cycle: Optional[str] = None) -> dict:
         if not billing_cycle:
             billing_cycle = datetime.now().strftime("%Y-%m")
@@ -99,13 +89,11 @@ class AliyunClient:
         data = await _post(self.bss_host, params)
         items = data.get("Data", {}).get("Items", {}).get("Item", [])
         total_outstanding = 0.0
-        total_pretax = 0.0
         details = []
         for item in items:
             outstanding = float(item.get("OutstandingAmount", 0))
             pretax = float(item.get("PretaxAmount", 0))
             total_outstanding += outstanding
-            total_pretax += pretax
             if pretax > 0 or outstanding > 0:
                 details.append({
                     "product": item.get("ProductName", ""),
@@ -115,15 +103,12 @@ class AliyunClient:
                 })
         return {
             "billing_cycle": billing_cycle,
-            "total_outstanding": round(total_outstanding, 4),  # 待还款（最准确）
-            "total_pretax": round(total_pretax, 4),
+            "total_outstanding": round(total_outstanding, 4),
             "currency": "USD" if self.site_type == "international" else "CNY",
             "details": details,
         }
 
-    # ==================== CDT 流量 ====================
     async def get_cdt_traffic(self) -> float:
-        """返回本月已用流量 GB"""
         params = _build_params(
             "ListCdtInternetTraffic", self.key_id, self.key_secret,
             "2021-08-16", {
@@ -132,19 +117,13 @@ class AliyunClient:
             }
         )
         try:
-            data = await _post(CDT_ENDPOINT, params)
+            data = await _post("cdt.aliyuncs.com", params)
             traffics = data.get("TrafficDetails", {}).get("TrafficDetail", [])
             total_bytes = sum(float(t.get("TotalTraffic", 0)) for t in traffics)
             return round(total_bytes / (1024 ** 3), 3)
         except Exception:
-            # CDT API 不可用时fallback到CMS
-            return await self._get_traffic_from_cms()
+            return 0.0
 
-    async def _get_traffic_from_cms(self) -> float:
-        """从CMS获取实例公网出口流量"""
-        return 0.0  # fallback，后续完善
-
-    # ==================== 实例状态 ====================
     async def get_instances(self) -> list:
         params = _build_params(
             "DescribeInstances", self.key_id, self.key_secret,
@@ -160,6 +139,8 @@ class AliyunClient:
             ip_list = inst.get("PublicIpAddress", {}).get("IpAddress", [])
             eip = inst.get("EipAddress", {}).get("IpAddress", "")
             public_ip = eip or (ip_list[0] if ip_list else "")
+            # 带宽取出口带宽
+            bandwidth = inst.get("InternetMaxBandwidthOut", 0)
             result.append({
                 "instance_id": inst.get("InstanceId"),
                 "instance_name": inst.get("InstanceName"),
@@ -167,8 +148,8 @@ class AliyunClient:
                 "public_ip": public_ip,
                 "instance_type": inst.get("InstanceType"),
                 "region_id": inst.get("RegionId"),
-                "is_spot": inst.get("SpotStrategy", "") != "NoSpot",
-                "bandwidth_mbps": inst.get("InternetMaxBandwidthOut", 0),
+                "is_spot": inst.get("SpotStrategy", "NoSpot") != "NoSpot",
+                "bandwidth_mbps": int(bandwidth) if bandwidth else 0,
             })
         return result
 
@@ -213,29 +194,4 @@ class AliyunClient:
             }
         )
         await _post(self.ecs_host, params)
-        return True
-
-    # ==================== CF DDNS ====================
-    async def update_cf_dns(self, zone_id: str, api_token: str, record_name: str, ip: str) -> bool:
-        headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json",
-        }
-        async with httpx.AsyncClient(timeout=10) as client:
-            # 查找记录ID
-            resp = await client.get(
-                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
-                headers=headers,
-                params={"type": "A", "name": record_name},
-            )
-            records = resp.json().get("result", [])
-            if not records:
-                return False
-            record_id = records[0]["id"]
-            # 更新
-            await client.put(
-                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
-                headers=headers,
-                json={"type": "A", "name": record_name, "content": ip, "proxied": True},
-            )
         return True

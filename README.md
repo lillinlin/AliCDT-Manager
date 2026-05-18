@@ -8,18 +8,9 @@
 - 流量熔断：超阈值自动停机（节省停机 / 普通停机）
 - 抢占式实例保活：被回收自动拉起
 - 定时开关机计划
-- Cloudflare DDNS 联动（IP 变更自动更新 A 记录）
 - Telegram 告警通知
 - 账单统计（待还款金额，国际站准确）
 - 现代化暗色 UI
-
-## 🚀 一键安装
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/install.sh)
-```
-
-安装完成后配置 Nginx 反代即可通过域名访问。
 
 ## 🔑 所需 RAM 权限
 
@@ -32,6 +23,15 @@ AliyunCDTFullAccess
 ```bash
 AliyunBSSFullAccess
 ```
+
+## 🚀 一键安装
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/install.sh)
+```
+
+安装完成后配置 Nginx 反代即可通过域名访问。
+
 
 ## 🛠 手动部署
 
@@ -47,6 +47,49 @@ curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/docke
 ```bash
 docker compose up -d
 ```
+
+## Nginx Cloudflare 配置示例
+
+请手动填写 #端口 #域名 #Pem证书路径 #Key证书路径
+
+```bash
+server {
+    listen #端口 ssl;
+    server_name #域名;
+
+    ssl_certificate     #Pem证书路径;
+    ssl_certificate_key #Key证书路径;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # 禁止访问数据目录
+    location ^~ /data/ {
+        deny all;
+        return 403;
+    }
+
+    # 禁止访问 .env 等敏感文件
+    location ~ /\. {
+        deny all;
+        return 403;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
+}
+
+```
+
 
 ## Tech Stack
 

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from jose import jwt
 from passlib.context import CryptContext
 
-from models.database import init_db, get_db, Account, Instance, BillingCache, Log, Settings
+from models.database import init_db, get_db, Account, Instance, Log, Settings
 from core.aliyun import AliyunClient
 from scheduler.jobs import start_scheduler, sync_instances, traffic_check, add_log
 
@@ -43,20 +43,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return user
 
 app = FastAPI(title="AliCDT Manager", version="1.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
 async def startup():
     await init_db()
     start_scheduler()
 
-# ==================== Pydantic ====================
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -64,7 +57,7 @@ class LoginRequest(BaseModel):
 class AccountCreate(BaseModel):
     name: str
     access_key_id: str
-    access_key_secret: str
+    access_key_secret: Optional[str] = None
     region_id: str
     site_type: str = "international"
     instance_id: Optional[str] = None
@@ -74,15 +67,11 @@ class AccountCreate(BaseModel):
     keep_alive: bool = False
     auto_start_time: Optional[str] = None
     auto_stop_time: Optional[str] = None
-    cf_zone_id: Optional[str] = None
-    cf_api_token: Optional[str] = None
-    cf_record_name: Optional[str] = None
 
 class SettingUpdate(BaseModel):
     key: str
     value: str
 
-# ==================== 初始化 ====================
 @app.get("/api/auth/initialized")
 async def is_initialized(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
@@ -101,7 +90,6 @@ async def init_admin(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"token": create_token(req.username), "username": req.username}
 
-# ==================== 认证 ====================
 @app.post("/api/auth/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings).where(Settings.key == "admin_username"))
@@ -114,7 +102,6 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     return {"token": create_token(req.username), "username": req.username}
 
-# ==================== 账户 ====================
 @app.get("/api/accounts")
 async def list_accounts(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Account))
@@ -126,6 +113,8 @@ async def list_accounts(user=Depends(get_current_user), db: AsyncSession = Depen
 
 @app.post("/api/accounts")
 async def create_account(data: AccountCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not data.access_key_secret:
+        raise HTTPException(status_code=400, detail="新建账户必须填写 AccessKey Secret")
     acc = Account(**data.model_dump())
     db.add(acc)
     await db.commit()
@@ -139,18 +128,21 @@ async def update_account(account_id: int, data: AccountCreate, user=Depends(get_
     acc = result.scalar_one_or_none()
     if not acc:
         raise HTTPException(status_code=404, detail="账户不存在")
-    for k, v in data.model_dump().items():
+    update_data = data.model_dump()
+    if not update_data.get("access_key_secret"):
+        update_data.pop("access_key_secret")
+    for k, v in update_data.items():
         setattr(acc, k, v)
     await db.commit()
     return {"message": "更新成功"}
 
 @app.delete("/api/accounts/{account_id}")
 async def delete_account(account_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(Instance).where(Instance.account_id == account_id))
     await db.execute(delete(Account).where(Account.id == account_id))
     await db.commit()
     return {"message": "删除成功"}
 
-# ==================== 实例 ====================
 @app.get("/api/instances")
 async def list_instances(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Instance))
@@ -204,7 +196,6 @@ async def release_instance(instance_id: str, user=Depends(get_current_user), db:
     await add_log("warning", "system", f"释放实例: {instance_id}")
     return {"message": "实例已释放"}
 
-# ==================== 账单 ====================
 @app.get("/api/billing/{account_id}")
 async def get_billing(account_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Account).where(Account.id == account_id))
@@ -216,7 +207,6 @@ async def get_billing(account_id: int, user=Depends(get_current_user), db: Async
     bill = await client.get_bill_overview()
     return {"balance": balance, "bill": bill}
 
-# ==================== 设置 ====================
 @app.get("/api/settings")
 async def get_settings(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
@@ -245,14 +235,8 @@ async def change_password(data: dict, user=Depends(get_current_user), db: AsyncS
     await db.commit()
     return {"message": "密码已更新"}
 
-# ==================== 日志 ====================
 @app.get("/api/logs")
-async def get_logs(
-    category: Optional[str] = None,
-    limit: int = 100,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+async def get_logs(category: Optional[str] = None, limit: int = 100, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     query = select(Log).order_by(Log.id.desc()).limit(limit)
     if category:
         query = select(Log).where(Log.category == category).order_by(Log.id.desc()).limit(limit)
@@ -269,7 +253,6 @@ async def clear_logs(category: Optional[str] = None, user=Depends(get_current_us
     await db.commit()
     return {"message": "日志已清空"}
 
-# ==================== 前端静态文件 ====================
 if os.path.exists("/app/frontend/dist"):
     app.mount("/assets", StaticFiles(directory="/app/frontend/dist/assets"), name="assets")
 

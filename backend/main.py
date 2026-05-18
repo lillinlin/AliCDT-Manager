@@ -1,4 +1,3 @@
-import json
 import os
 from datetime import datetime, timedelta
 from typing import Optional, List
@@ -20,9 +19,11 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-change-me")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 def create_token(username: str):
     expire = datetime.utcnow() + timedelta(days=7)
     return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
 
 def verify_token(token: str):
     try:
@@ -31,8 +32,10 @@ def verify_token(token: str):
     except Exception:
         return None
 
+
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 security = HTTPBearer(auto_error=False)
+
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)):
     if not credentials:
@@ -42,17 +45,21 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token无效或已过期")
     return user
 
+
 app = FastAPI(title="AliCDT Manager", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 
 @app.on_event("startup")
 async def startup():
     await init_db()
     start_scheduler()
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class AccountCreate(BaseModel):
     name: str
@@ -68,14 +75,21 @@ class AccountCreate(BaseModel):
     auto_start_time: Optional[str] = None
     auto_stop_time: Optional[str] = None
 
+
 class SettingUpdate(BaseModel):
     key: str
     value: str
+
+
+class RenameRequest(BaseModel):
+    name: str
+
 
 @app.get("/api/auth/initialized")
 async def is_initialized(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings).where(Settings.key == "admin_password_hash"))
     return {"initialized": result.scalar_one_or_none() is not None}
+
 
 @app.post("/api/auth/init")
 async def init_admin(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -90,6 +104,7 @@ async def init_admin(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"token": create_token(req.username), "username": req.username}
 
+
 @app.post("/api/auth/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings).where(Settings.key == "admin_username"))
@@ -102,6 +117,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     return {"token": create_token(req.username), "username": req.username}
 
+
 @app.get("/api/accounts")
 async def list_accounts(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Account))
@@ -111,6 +127,7 @@ async def list_accounts(user=Depends(get_current_user), db: AsyncSession = Depen
         for acc in accounts
     ]
 
+
 @app.post("/api/accounts")
 async def create_account(data: AccountCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not data.access_key_secret:
@@ -119,8 +136,11 @@ async def create_account(data: AccountCreate, user=Depends(get_current_user), db
     db.add(acc)
     await db.commit()
     await db.refresh(acc)
+    # 立即同步实例和流量
     await sync_instances()
+    await traffic_check()
     return {"id": acc.id, "message": "账户已添加"}
+
 
 @app.put("/api/accounts/{account_id}")
 async def update_account(account_id: int, data: AccountCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -136,6 +156,7 @@ async def update_account(account_id: int, data: AccountCreate, user=Depends(get_
     await db.commit()
     return {"message": "更新成功"}
 
+
 @app.delete("/api/accounts/{account_id}")
 async def delete_account(account_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await db.execute(delete(Instance).where(Instance.account_id == account_id))
@@ -143,17 +164,31 @@ async def delete_account(account_id: int, user=Depends(get_current_user), db: As
     await db.commit()
     return {"message": "删除成功"}
 
+
 @app.get("/api/instances")
 async def list_instances(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Instance))
     instances = result.scalars().all()
     return [{k: v for k, v in i.__dict__.items() if k != "_sa_instance_state"} for i in instances]
 
+
 @app.post("/api/instances/sync")
 async def manual_sync(user=Depends(get_current_user)):
     await sync_instances()
     await traffic_check()
     return {"message": "同步完成"}
+
+
+@app.patch("/api/instances/{instance_id}/rename")
+async def rename_instance(instance_id: str, data: RenameRequest, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Instance).where(Instance.instance_id == instance_id))
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise HTTPException(status_code=404)
+    inst.instance_name = data.name
+    await db.commit()
+    return {"message": "更新成功"}
+
 
 @app.post("/api/instances/{instance_id}/start")
 async def start_instance(instance_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -168,6 +203,7 @@ async def start_instance(instance_id: str, user=Depends(get_current_user), db: A
     await add_log("info", "system", f"手动开机: {instance_id}")
     return {"message": "开机指令已发送"}
 
+
 @app.post("/api/instances/{instance_id}/stop")
 async def stop_instance(instance_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Instance).where(Instance.instance_id == instance_id))
@@ -180,6 +216,7 @@ async def stop_instance(instance_id: str, user=Depends(get_current_user), db: As
     await client.stop_instance(instance_id, acc.shutdown_mode)
     await add_log("info", "system", f"手动关机: {instance_id}")
     return {"message": "关机指令已发送"}
+
 
 @app.delete("/api/instances/{instance_id}")
 async def release_instance(instance_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -196,6 +233,7 @@ async def release_instance(instance_id: str, user=Depends(get_current_user), db:
     await add_log("warning", "system", f"释放实例: {instance_id}")
     return {"message": "实例已释放"}
 
+
 @app.get("/api/billing/{account_id}")
 async def get_billing(account_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Account).where(Account.id == account_id))
@@ -207,11 +245,13 @@ async def get_billing(account_id: int, user=Depends(get_current_user), db: Async
     bill = await client.get_bill_overview()
     return {"balance": balance, "bill": bill}
 
+
 @app.get("/api/settings")
 async def get_settings(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
     rows = result.scalars().all()
     return {r.key: r.value for r in rows if "password_hash" not in r.key}
+
 
 @app.post("/api/settings")
 async def update_settings(items: List[SettingUpdate], user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -225,6 +265,7 @@ async def update_settings(items: List[SettingUpdate], user=Depends(get_current_u
     await db.commit()
     return {"message": "保存成功"}
 
+
 @app.post("/api/settings/change-password")
 async def change_password(data: dict, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     new_hash = pwd_context.hash(data.get("password", ""))
@@ -235,6 +276,7 @@ async def change_password(data: dict, user=Depends(get_current_user), db: AsyncS
     await db.commit()
     return {"message": "密码已更新"}
 
+
 @app.get("/api/logs")
 async def get_logs(category: Optional[str] = None, limit: int = 100, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     query = select(Log).order_by(Log.id.desc()).limit(limit)
@@ -244,6 +286,7 @@ async def get_logs(category: Optional[str] = None, limit: int = 100, user=Depend
     logs = result.scalars().all()
     return [{k: v for k, v in l.__dict__.items() if k != "_sa_instance_state"} for l in logs]
 
+
 @app.delete("/api/logs")
 async def clear_logs(category: Optional[str] = None, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if category:
@@ -252,6 +295,7 @@ async def clear_logs(category: Optional[str] = None, user=Depends(get_current_us
         await db.execute(delete(Log))
     await db.commit()
     return {"message": "日志已清空"}
+
 
 if os.path.exists("/app/frontend/dist"):
     app.mount("/assets", StaticFiles(directory="/app/frontend/dist/assets"), name="assets")

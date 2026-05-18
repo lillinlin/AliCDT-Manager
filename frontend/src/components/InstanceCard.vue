@@ -1,5 +1,6 @@
 <template>
   <div class="card p-5 space-y-4 hover:border-accent/30 transition-all duration-200">
+    <!-- 顶部：名称 + 状态 -->
     <div class="flex items-start justify-between">
       <div>
         <div class="font-medium text-text text-sm">{{ instance.instance_name || instance.instance_id }}</div>
@@ -39,7 +40,7 @@
       </div>
       <div class="bg-surface rounded-lg px-3 py-2">
         <div class="text-text-muted mb-0.5">带宽</div>
-        <div class="text-text">{{ instance.bandwidth_mbps || '—' }} Mbps</div>
+        <div class="text-text">{{ instance.bandwidth_mbps ? instance.bandwidth_mbps + ' Mbps' : '—' }}</div>
       </div>
       <div class="bg-surface rounded-lg px-3 py-2">
         <div class="text-text-muted mb-0.5">类型</div>
@@ -49,25 +50,27 @@
       </div>
     </div>
 
-    <!-- 账单信息 -->
-    <div v-if="billing" class="bg-surface rounded-lg px-3 py-2 text-xs space-y-1">
-      <div class="flex justify-between">
-        <span class="text-text-muted">账户余额</span>
-        <span class="font-mono" :class="parseFloat(billing.balance?.available_amount) < 1 ? 'text-danger' : 'text-success'">
-          {{ billing.balance?.currency === 'USD' ? '$' : '¥' }}{{ billing.balance?.available_amount ?? '—' }}
-        </span>
-      </div>
-      <div class="flex justify-between">
-        <span class="text-text-muted">本月待还款</span>
-        <span class="font-mono text-warning">
-          {{ billing.bill?.currency === 'USD' ? '$' : '¥' }}{{ billing.bill?.total_outstanding ?? '—' }}
-        </span>
-      </div>
+    <!-- 账单信息：始终显示 -->
+    <div class="bg-surface rounded-lg px-3 py-2.5 text-xs space-y-1.5">
+      <div class="text-text-muted font-medium mb-1">账单信息</div>
+      <div v-if="billingLoading" class="text-text-muted text-center py-1">加载中...</div>
+      <div v-else-if="billingError" class="text-danger text-center py-1">{{ billingError }}</div>
+      <template v-else>
+        <div class="flex justify-between">
+          <span class="text-text-muted">账户余额</span>
+          <span class="font-mono"
+            :class="(billing?.balance?.available_amount ?? 0) < 1 ? 'text-danger' : 'text-success'">
+            {{ billing?.balance?.symbol }}{{ billing?.balance?.available_amount ?? '—' }}
+          </span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-text-muted">本月待还款</span>
+          <span class="font-mono text-warning">
+            {{ billing?.bill?.symbol }}{{ billing?.bill?.total_outstanding ?? '—' }}
+          </span>
+        </div>
+      </template>
     </div>
-    <button v-else @click="loadBilling" :disabled="billingLoading"
-      class="w-full text-xs py-1.5 rounded-lg bg-surface hover:bg-white/5 text-text-muted hover:text-text transition-all">
-      {{ billingLoading ? '查询中...' : '📊 查看账单' }}
-    </button>
 
     <!-- 账户 + 保活标记 -->
     <div class="flex items-center justify-between text-xs text-text-muted">
@@ -99,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useStore } from '../stores'
 
 const props = defineProps({ instance: Object, account: Object })
@@ -108,9 +111,18 @@ defineEmits(['start', 'stop', 'release'])
 const store = useStore()
 const billing = ref(null)
 const billingLoading = ref(false)
+const billingError = ref('')
 
-const statusBadge = computed(() => ({ Running: 'badge-running', Stopped: 'badge-stopped' }[props.instance.status] || 'badge-unknown'))
-const statusLabel = computed(() => ({ Running: '● 运行中', Stopped: '● 已停机' }[props.instance.status] || '● 未知'))
+const statusBadge = computed(() => ({
+  Running: 'badge-running',
+  Stopped: 'badge-stopped',
+}[props.instance.status] || 'badge-unknown'))
+
+const statusLabel = computed(() => ({
+  Running: '● 运行中',
+  Stopped: '● 已停机',
+}[props.instance.status] || '● 未知'))
+
 const trafficPct = computed(() => props.instance.traffic_percent || 0)
 const trafficColor = computed(() => trafficPct.value >= 90 ? 'text-danger' : trafficPct.value >= 75 ? 'text-warning' : 'text-success')
 const trafficBarColor = computed(() => trafficPct.value >= 90 ? 'bg-danger' : trafficPct.value >= 75 ? 'bg-warning' : 'bg-success')
@@ -118,14 +130,17 @@ const trafficBarColor = computed(() => trafficPct.value >= 90 ? 'bg-danger' : tr
 async function loadBilling() {
   if (!props.account) return
   billingLoading.value = true
+  billingError.value = ''
   try {
     billing.value = await store.getBilling(props.account.id)
   } catch (e) {
-    billing.value = { error: true }
+    billingError.value = '账单获取失败'
   } finally {
     billingLoading.value = false
   }
 }
+
+onMounted(() => loadBilling())
 
 function formatTime(t) {
   if (!t) return ''

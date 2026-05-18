@@ -290,6 +290,13 @@ async def test_tg(user=Depends(get_current_user), db: AsyncSession = Depends(get
     return {"message": "测试消息已发送"}
 
 
+@app.post("/api/settings/test-daily-report")
+async def test_daily_report(user=Depends(get_current_user)):
+    from scheduler.jobs import daily_traffic_report
+    await daily_traffic_report()
+    return {"message": "流量汇报已发送"}
+
+
 @app.post("/api/settings/change-password")
 async def change_password(data: dict, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     new_hash = pwd_context.hash(data.get("password", ""))

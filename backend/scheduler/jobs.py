@@ -10,18 +10,7 @@ import httpx
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
 
-async def add_log(level: str, category: str, message: str):
-    """只记录 warning 和 error 级别，info 级别丢弃"""
-    if level == "info":
-        return
-    async with AsyncSessionLocal() as db:
-        log = Log(level=level, category=category, message=message)
-        db.add(log)
-        await db.commit()
-
-
 async def add_important_log(category: str, message: str):
-    """强制记录重要 info 日志（如保活、熔断、定时任务）"""
     async with AsyncSessionLocal() as db:
         log = Log(level="info", category=category, message=message)
         db.add(log)
@@ -52,6 +41,15 @@ async def send_tg_notify(message: str):
             await db.commit()
 
 
+async def add_log(level: str, category: str, message: str):
+    if level == "info":
+        return
+    async with AsyncSessionLocal() as db:
+        log = Log(level=level, category=category, message=message)
+        db.add(log)
+        await db.commit()
+
+
 async def traffic_check():
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
@@ -75,18 +73,16 @@ async def traffic_check():
                 )
                 await db.commit()
 
-            # 只在触发熔断时记录日志
             if percent >= account.threshold_percent:
                 if account.instance_id:
                     await client.stop_instance(account.instance_id, account.shutdown_mode)
-                    msg = (
+                    await send_tg_notify(
                         f"🚨 <b>流量熔断触发</b>\n"
                         f"账户: {account.name}\n"
                         f"已用: {traffic_gb}GB ({percent}%)\n"
                         f"阈值: {account.threshold_percent}%\n"
                         f"动作: 自动停机（{account.shutdown_mode}）"
                     )
-                    await send_tg_notify(msg)
                     await add_important_log("traffic", f"[{account.name}] 流量熔断 {traffic_gb}GB/{percent}%，已停机")
 
         except Exception as e:
@@ -122,13 +118,12 @@ async def keep_alive_check():
 
             if status == "Stopped":
                 await client.start_instance(account.instance_id)
-                msg = (
+                await send_tg_notify(
                     f"⚡ <b>保活触发</b>\n"
                     f"账户: {account.name}\n"
                     f"实例: {account.instance_id}\n"
                     f"检测到停机，已自动拉起"
                 )
-                await send_tg_notify(msg)
                 await add_important_log("keepalive", f"[{account.name}] 实例 {account.instance_id} 被回收，已自动拉起")
 
         except Exception as e:
@@ -203,7 +198,11 @@ async def sync_instances():
 
 
 async def daily_traffic_report():
-    """每日北京时间 00:00 发送流量汇报"""
+    """每日北京时间 00:00 发送流量汇报，受开关控制"""
+    enabled = await get_setting("tg_daily_report", "0")
+    if enabled != "1":
+        return
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -212,7 +211,11 @@ async def daily_traffic_report():
 
     instance_map = {i.account_id: i for i in instances}
 
-    lines = ["📊 <b>每日流量汇报</b>", f"时间: {datetime.now().strftime('%Y-%m-%d 00:00')} (北京时间)", ""]
+    lines = [
+        "📊 <b>每日流量汇报</b>",
+        f"时间: {datetime.now().strftime('%Y-%m-%d 00:00')} (北京时间)",
+        "",
+    ]
 
     for account in accounts:
         inst = instance_map.get(account.id)
@@ -239,6 +242,5 @@ def start_scheduler():
     scheduler.add_job(keep_alive_check, IntervalTrigger(minutes=1), id="keep_alive", replace_existing=True)
     scheduler.add_job(scheduled_power, IntervalTrigger(minutes=1), id="scheduled_power", replace_existing=True)
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
-    # 每日北京时间 00:00 发送流量汇报
     scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
     scheduler.start()

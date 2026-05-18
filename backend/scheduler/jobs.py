@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -76,6 +75,7 @@ async def traffic_check():
 
 
 async def keep_alive_check():
+    """每1分钟执行，实时查询实例状态，发现停机立即拉起"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Account).where(Account.enabled == True, Account.keep_alive == True)
@@ -90,8 +90,10 @@ async def keep_alive_check():
                 account.access_key_id, account.access_key_secret,
                 account.region_id, account.site_type,
             )
+            # 直接调 API 实时获取状态，不依赖数据库缓存
             status = await client.get_instance_status(account.instance_id)
 
+            # 同步状态到数据库
             async with AsyncSessionLocal() as db:
                 await db.execute(
                     update(Instance)
@@ -101,9 +103,12 @@ async def keep_alive_check():
                 await db.commit()
 
             if status == "Stopped":
+                await add_log("warning", "keepalive", f"[{account.name}] 检测到停机，正在拉起...")
                 await client.start_instance(account.instance_id)
-                await add_log("warning", "keepalive", f"[{account.name}] 实例被回收，已自动拉起")
-                await send_tg_notify(f"⚡ <b>保活触发</b>\n账户: {account.name}\n实例已自动重启")
+                await add_log("warning", "keepalive", f"[{account.name}] 已发送开机指令")
+                await send_tg_notify(
+                    f"⚡ <b>保活触发</b>\n账户: {account.name}\n实例: {account.instance_id}\n已自动重启"
+                )
         except Exception as e:
             await add_log("error", "keepalive", f"[{account.name}] 保活检测失败: {e}")
 
@@ -133,6 +138,7 @@ async def scheduled_power():
 
 
 async def sync_instances():
+    """每2分钟同步一次实例列表和状态"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -153,7 +159,7 @@ async def sync_instances():
                     if existing:
                         existing.status = inst["status"]
                         existing.public_ip = inst["public_ip"]
-                        existing.instance_name = inst["instance_name"]
+                        existing.instance_name = inst.get("instance_name") or existing.instance_name
                         existing.is_spot = inst["is_spot"]
                         existing.bandwidth_mbps = inst["bandwidth_mbps"]
                         existing.last_synced = datetime.utcnow()
@@ -166,8 +172,12 @@ async def sync_instances():
 
 
 def start_scheduler():
+    # 流量巡检每10分钟
     scheduler.add_job(traffic_check, IntervalTrigger(minutes=10), id="traffic_check", replace_existing=True)
-    scheduler.add_job(keep_alive_check, IntervalTrigger(minutes=2), id="keep_alive", replace_existing=True)
+    # 保活每1分钟，实时查API
+    scheduler.add_job(keep_alive_check, IntervalTrigger(minutes=1), id="keep_alive", replace_existing=True)
+    # 定时开关机每分钟检查
     scheduler.add_job(scheduled_power, IntervalTrigger(minutes=1), id="scheduled_power", replace_existing=True)
-    scheduler.add_job(sync_instances, IntervalTrigger(minutes=5), id="sync_instances", replace_existing=True)
+    # 实例状态同步每2分钟
+    scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
     scheduler.start()

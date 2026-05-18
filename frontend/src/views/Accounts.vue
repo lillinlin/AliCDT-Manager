@@ -7,7 +7,6 @@
       </button>
     </div>
 
-    <!-- 账户列表 -->
     <div class="space-y-3">
       <div v-if="store.accounts.length === 0" class="card p-12 text-center text-text-muted text-sm">
         暂无账户，点击右上角添加
@@ -23,9 +22,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted">
-              {{ acc.region_id }}
-            </span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted">{{ acc.region_id }}</span>
             <span v-if="acc.keep_alive" class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent">保活</span>
             <button @click="openEdit(acc)" class="btn-ghost text-xs px-2 py-1">编辑</button>
             <button @click="confirmDelete(acc)" class="btn-danger text-xs px-2 py-1">删除</button>
@@ -64,7 +61,9 @@
             <input v-model="form.access_key_id" class="input" placeholder="LTAI5t..." />
           </div>
           <div>
-            <label class="text-xs text-text-muted mb-1 block">AccessKey Secret *</label>
+            <label class="text-xs text-text-muted mb-1 block">
+              AccessKey Secret {{ editTarget ? '（不修改请留空）' : '*' }}
+            </label>
             <input v-model="form.access_key_secret" type="password" class="input" placeholder="••••••••" />
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -102,7 +101,6 @@
             </select>
           </div>
 
-          <!-- 保活 -->
           <label class="flex items-center gap-2 cursor-pointer">
             <div class="relative">
               <input type="checkbox" v-model="form.keep_alive" class="sr-only" />
@@ -121,14 +119,6 @@
               <label class="text-xs text-text-muted mb-1 block">定时关机</label>
               <input v-model="form.auto_stop_time" type="time" class="input" />
             </div>
-          </div>
-
-          <!-- CF DDNS -->
-          <div class="border-t border-border pt-3 space-y-2">
-            <div class="text-xs text-text-muted font-medium">Cloudflare DDNS（可选）</div>
-            <input v-model="form.cf_zone_id" class="input" placeholder="Zone ID" />
-            <input v-model="form.cf_api_token" type="password" class="input" placeholder="API Token" />
-            <input v-model="form.cf_record_name" class="input" placeholder="子域名，如 ecs.example.com" />
           </div>
         </div>
 
@@ -151,6 +141,9 @@
         <div class="text-4xl">🗑️</div>
         <div class="font-semibold">确认删除账户？</div>
         <div class="text-sm text-text-muted">{{ deleteTarget.name }}</div>
+        <div class="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
+          删除账户后，关联的实例记录也会一并清除
+        </div>
         <div class="flex gap-3">
           <button @click="deleteTarget = null" class="btn-ghost flex-1">取消</button>
           <button @click="doDelete" class="btn-danger flex-1">确认删除</button>
@@ -178,7 +171,6 @@ const defaultForm = () => ({
   instance_id: '', traffic_limit_gb: 200, threshold_percent: 95,
   shutdown_mode: 'StopCharging', keep_alive: false,
   auto_start_time: null, auto_stop_time: null,
-  cf_zone_id: '', cf_api_token: '', cf_record_name: '',
 })
 
 const form = ref(defaultForm())
@@ -194,18 +186,22 @@ function openAdd() {
 
 function openEdit(acc) {
   editTarget.value = acc
-  form.value = { ...acc }
+  form.value = { ...acc, access_key_secret: '' }
   formError.value = ''
   showForm.value = true
 }
 
 async function submit() {
-  if (!form.value.name || !form.value.access_key_id || !form.value.access_key_secret) {
+  formError.value = ''
+  if (!form.value.name || !form.value.access_key_id) {
     formError.value = '请填写必填项'
     return
   }
+  if (!editTarget.value && !form.value.access_key_secret) {
+    formError.value = '请填写 AccessKey Secret'
+    return
+  }
   submitting.value = true
-  formError.value = ''
   try {
     if (editTarget.value) {
       await store.updateAccount(editTarget.value.id, form.value)

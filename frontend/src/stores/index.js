@@ -75,6 +75,7 @@ export const useStore = defineStore('main', () => {
   async function createAccount(payload) {
     await api.post('/accounts', payload)
     await fetchAccounts()
+    await fetchInstances()
   }
 
   async function updateAccount(id, payload) {
@@ -85,6 +86,7 @@ export const useStore = defineStore('main', () => {
   async function deleteAccount(id) {
     await api.delete(`/accounts/${id}`)
     await fetchAccounts()
+    await fetchInstances()
   }
 
   async function saveSettings(items) {
@@ -97,10 +99,16 @@ export const useStore = defineStore('main', () => {
     await fetchLogs()
   }
 
+  async function renameInstance(instanceId, name) {
+    await api.patch(`/instances/${instanceId}/rename`, { name })
+    await fetchInstances()
+  }
+
   return {
     instances, accounts, logs, settings, loading,
     login, fetchInstances, fetchAccounts, fetchLogs, fetchSettings,
     syncAll, controlInstance, releaseInstance, getBilling,
     createAccount, updateAccount, deleteAccount, saveSettings, clearLogs,
+    renameInstance,
   }
 })

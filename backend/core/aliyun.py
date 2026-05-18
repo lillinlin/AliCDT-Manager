@@ -20,6 +20,10 @@ ECS_ENDPOINTS = {
     "us-east-1": "ecs.us-east-1.aliyuncs.com",
     "cn-hongkong": "ecs.cn-hongkong.aliyuncs.com",
     "eu-central-1": "ecs.eu-central-1.aliyuncs.com",
+    "cn-beijing": "ecs.cn-beijing.aliyuncs.com",
+    "cn-shanghai": "ecs.cn-shanghai.aliyuncs.com",
+    "cn-shenzhen": "ecs.cn-shenzhen.aliyuncs.com",
+    "cn-zhangjiakou": "ecs.cn-zhangjiakou.aliyuncs.com",
 }
 
 
@@ -51,13 +55,16 @@ def _build_params(action: str, key_id: str, key_secret: str, version: str, extra
     return params
 
 
-async def _post(host: str, params: dict, timeout: float = 10.0) -> dict:
+async def _post(host: str, params: dict, timeout: float = 15.0) -> dict:
     url = f"https://{host}/"
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    # 强制 IPv4 避免 IPv6 连接问题
+    transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
         resp = await client.post(url, data=params)
         data = resp.json()
-        if "Code" in data and str(data.get("Code")) not in ("200", "0", ""):
-            raise Exception(f"API Error [{data.get('Code')}]: {data.get('Message', 'unknown')}")
+        code = str(data.get("Code", ""))
+        if code and code not in ("200", "0", "", "Success", "True"):
+            raise Exception(f"API Error [{code}]: {data.get('Message', 'unknown')}")
         return data
 
 
@@ -69,6 +76,8 @@ class AliyunClient:
         self.site_type = site_type
         self.bss_host = BSS_ENDPOINTS.get(site_type, BSS_ENDPOINTS["international"])
         self.ecs_host = ECS_ENDPOINTS.get(region_id, f"ecs.{region_id}.aliyuncs.com")
+        self.currency = "USD" if site_type == "international" else "CNY"
+        self.currency_symbol = "$" if site_type == "international" else "¥"
 
     async def get_balance(self) -> dict:
         params = _build_params("QueryAccountBalance", self.key_id, self.key_secret, "2017-12-14", {})
@@ -76,7 +85,8 @@ class AliyunClient:
         d = data.get("Data", {})
         return {
             "available_amount": float(d.get("AvailableAmount", 0)),
-            "currency": d.get("Currency", "USD"),
+            "currency": d.get("Currency", self.currency),
+            "symbol": self.currency_symbol,
         }
 
     async def get_bill_overview(self, billing_cycle: Optional[str] = None) -> dict:
@@ -99,12 +109,12 @@ class AliyunClient:
                     "product": item.get("ProductName", ""),
                     "pretax_amount": round(pretax, 4),
                     "outstanding_amount": round(outstanding, 4),
-                    "currency": item.get("Currency", "USD"),
                 })
         return {
             "billing_cycle": billing_cycle,
             "total_outstanding": round(total_outstanding, 4),
-            "currency": "USD" if self.site_type == "international" else "CNY",
+            "currency": self.currency,
+            "symbol": self.currency_symbol,
             "details": details,
         }
 
@@ -139,7 +149,6 @@ class AliyunClient:
             ip_list = inst.get("PublicIpAddress", {}).get("IpAddress", [])
             eip = inst.get("EipAddress", {}).get("IpAddress", "")
             public_ip = eip or (ip_list[0] if ip_list else "")
-            # 带宽取出口带宽
             bandwidth = inst.get("InternetMaxBandwidthOut", 0)
             result.append({
                 "instance_id": inst.get("InstanceId"),

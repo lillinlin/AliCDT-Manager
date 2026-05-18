@@ -1,4 +1,5 @@
 import os
+import httpx
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException
@@ -13,7 +14,7 @@ from passlib.context import CryptContext
 
 from models.database import init_db, get_db, Account, Instance, Log, Settings
 from core.aliyun import AliyunClient
-from scheduler.jobs import start_scheduler, sync_instances, traffic_check, add_log
+from scheduler.jobs import start_scheduler, sync_instances, traffic_check, add_important_log
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-change-me")
 ALGORITHM = "HS256"
@@ -136,7 +137,6 @@ async def create_account(data: AccountCreate, user=Depends(get_current_user), db
     db.add(acc)
     await db.commit()
     await db.refresh(acc)
-    # 立即同步实例和流量
     await sync_instances()
     await traffic_check()
     return {"id": acc.id, "message": "账户已添加"}
@@ -200,7 +200,7 @@ async def start_instance(instance_id: str, user=Depends(get_current_user), db: A
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.start_instance(instance_id)
-    await add_log("info", "system", f"手动开机: {instance_id}")
+    await add_important_log("system", f"手动开机: {instance_id}")
     return {"message": "开机指令已发送"}
 
 
@@ -214,7 +214,7 @@ async def stop_instance(instance_id: str, user=Depends(get_current_user), db: As
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.stop_instance(instance_id, acc.shutdown_mode)
-    await add_log("info", "system", f"手动关机: {instance_id}")
+    await add_important_log("system", f"手动关机: {instance_id}")
     return {"message": "关机指令已发送"}
 
 
@@ -230,7 +230,7 @@ async def release_instance(instance_id: str, user=Depends(get_current_user), db:
     await client.delete_instance(instance_id)
     await db.execute(delete(Instance).where(Instance.instance_id == instance_id))
     await db.commit()
-    await add_log("warning", "system", f"释放实例: {instance_id}")
+    await add_important_log("system", f"释放实例: {instance_id}")
     return {"message": "实例已释放"}
 
 
@@ -264,6 +264,30 @@ async def update_settings(items: List[SettingUpdate], user=Depends(get_current_u
             db.add(Settings(key=item.key, value=item.value))
     await db.commit()
     return {"message": "保存成功"}
+
+
+@app.post("/api/settings/test-tg")
+async def test_tg(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Settings).where(Settings.key == "tg_bot_token"))
+    token_row = result.scalar_one_or_none()
+    result = await db.execute(select(Settings).where(Settings.key == "tg_chat_id"))
+    chat_row = result.scalar_one_or_none()
+    if not token_row or not chat_row or not token_row.value or not chat_row.value:
+        raise HTTPException(status_code=400, detail="请先保存 Bot Token 和 Chat ID")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(
+                f"https://api.telegram.org/bot{token_row.value}/sendMessage",
+                json={"chat_id": chat_row.value, "text": "✅ AliCDT Manager 测试消息发送成功"}
+            )
+            data = r.json()
+            if not data.get("ok"):
+                raise HTTPException(status_code=400, detail=f"TG返回错误: {data.get('description')}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发送失败: {e}")
+    return {"message": "测试消息已发送"}
 
 
 @app.post("/api/settings/change-password")

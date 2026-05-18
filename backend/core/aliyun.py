@@ -57,7 +57,6 @@ def _build_params(action: str, key_id: str, key_secret: str, version: str, extra
 
 async def _post(host: str, params: dict, timeout: float = 15.0) -> dict:
     url = f"https://{host}/"
-    # 强制 IPv4 避免 IPv6 连接问题
     transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
     async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
         resp = await client.post(url, data=params)
@@ -121,15 +120,12 @@ class AliyunClient:
     async def get_cdt_traffic(self) -> float:
         params = _build_params(
             "ListCdtInternetTraffic", self.key_id, self.key_secret,
-            "2021-08-16", {
-                "RegionId": self.region_id,
-                "Month": datetime.now().strftime("%Y-%m"),
-            }
+            "2021-08-13", {}
         )
         try:
             data = await _post("cdt.aliyuncs.com", params)
-            traffics = data.get("TrafficDetails", {}).get("TrafficDetail", [])
-            total_bytes = sum(float(t.get("TotalTraffic", 0)) for t in traffics)
+            traffics = data.get("TrafficDetails", [])
+            total_bytes = sum(float(t.get("Traffic", 0)) for t in traffics)
             return round(total_bytes / (1024 ** 3), 3)
         except Exception:
             return 0.0

@@ -66,7 +66,7 @@ class Settings(Base):
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
 
-DATABASE_URL = "sqlite+aiosqlite:///./data/guard.db"
+DATABASE_URL = "sqlite+aiosqlite:////app/data/guard.db"
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

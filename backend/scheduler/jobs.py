@@ -1,7 +1,8 @@
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import select, update, delete
+from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import select, update
 from models.database import AsyncSessionLocal, Account, Instance, Log, Settings
 from core.aliyun import AliyunClient
 import httpx
@@ -10,8 +11,19 @@ scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
 
 async def add_log(level: str, category: str, message: str):
+    """只记录 warning 和 error 级别，info 级别丢弃"""
+    if level == "info":
+        return
     async with AsyncSessionLocal() as db:
         log = Log(level=level, category=category, message=message)
+        db.add(log)
+        await db.commit()
+
+
+async def add_important_log(category: str, message: str):
+    """强制记录重要 info 日志（如保活、熔断、定时任务）"""
+    async with AsyncSessionLocal() as db:
+        log = Log(level="info", category=category, message=message)
         db.add(log)
         await db.commit()
 
@@ -35,7 +47,9 @@ async def send_tg_notify(message: str):
                 json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
             )
     except Exception as e:
-        await add_log("warning", "notify", f"TG通知发送失败: {e}")
+        async with AsyncSessionLocal() as db:
+            db.add(Log(level="warning", category="notify", message=f"TG通知发送失败: {e}"))
+            await db.commit()
 
 
 async def traffic_check():
@@ -61,21 +75,27 @@ async def traffic_check():
                 )
                 await db.commit()
 
-            await add_log("info", "traffic", f"[{account.name}] 流量: {traffic_gb}GB / {percent}%")
-
+            # 只在触发熔断时记录日志
             if percent >= account.threshold_percent:
                 if account.instance_id:
                     await client.stop_instance(account.instance_id, account.shutdown_mode)
-                    await send_tg_notify(
-                        f"🚨 <b>流量熔断</b>\n账户: {account.name}\n已用: {traffic_gb}GB ({percent}%)\n已自动停机"
+                    msg = (
+                        f"🚨 <b>流量熔断触发</b>\n"
+                        f"账户: {account.name}\n"
+                        f"已用: {traffic_gb}GB ({percent}%)\n"
+                        f"阈值: {account.threshold_percent}%\n"
+                        f"动作: 自动停机（{account.shutdown_mode}）"
                     )
-                    await add_log("warning", "traffic", f"[{account.name}] 熔断触发，已停机")
+                    await send_tg_notify(msg)
+                    await add_important_log("traffic", f"[{account.name}] 流量熔断 {traffic_gb}GB/{percent}%，已停机")
+
         except Exception as e:
-            await add_log("error", "traffic", f"[{account.name}] 流量巡检失败: {e}")
+            async with AsyncSessionLocal() as db:
+                db.add(Log(level="error", category="traffic", message=f"[{account.name}] 流量巡检失败: {e}"))
+                await db.commit()
 
 
 async def keep_alive_check():
-    """每1分钟执行，实时查询实例状态，发现停机立即拉起"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Account).where(Account.enabled == True, Account.keep_alive == True)
@@ -90,10 +110,8 @@ async def keep_alive_check():
                 account.access_key_id, account.access_key_secret,
                 account.region_id, account.site_type,
             )
-            # 直接调 API 实时获取状态，不依赖数据库缓存
             status = await client.get_instance_status(account.instance_id)
 
-            # 同步状态到数据库
             async with AsyncSessionLocal() as db:
                 await db.execute(
                     update(Instance)
@@ -103,14 +121,20 @@ async def keep_alive_check():
                 await db.commit()
 
             if status == "Stopped":
-                await add_log("warning", "keepalive", f"[{account.name}] 检测到停机，正在拉起...")
                 await client.start_instance(account.instance_id)
-                await add_log("warning", "keepalive", f"[{account.name}] 已发送开机指令")
-                await send_tg_notify(
-                    f"⚡ <b>保活触发</b>\n账户: {account.name}\n实例: {account.instance_id}\n已自动重启"
+                msg = (
+                    f"⚡ <b>保活触发</b>\n"
+                    f"账户: {account.name}\n"
+                    f"实例: {account.instance_id}\n"
+                    f"检测到停机，已自动拉起"
                 )
+                await send_tg_notify(msg)
+                await add_important_log("keepalive", f"[{account.name}] 实例 {account.instance_id} 被回收，已自动拉起")
+
         except Exception as e:
-            await add_log("error", "keepalive", f"[{account.name}] 保活检测失败: {e}")
+            async with AsyncSessionLocal() as db:
+                db.add(Log(level="error", category="keepalive", message=f"[{account.name}] 保活检测失败: {e}"))
+                await db.commit()
 
 
 async def scheduled_power():
@@ -129,16 +153,21 @@ async def scheduled_power():
         try:
             if account.auto_start_time and account.auto_start_time == now:
                 await client.start_instance(account.instance_id)
-                await add_log("info", "scheduler", f"[{account.name}] 定时开机")
+                await add_important_log("scheduler", f"[{account.name}] 定时开机执行 {now}")
+                await send_tg_notify(f"⏰ <b>定时开机</b>\n账户: {account.name}\n时间: {now}")
+
             if account.auto_stop_time and account.auto_stop_time == now:
                 await client.stop_instance(account.instance_id, account.shutdown_mode)
-                await add_log("info", "scheduler", f"[{account.name}] 定时关机")
+                await add_important_log("scheduler", f"[{account.name}] 定时关机执行 {now}")
+                await send_tg_notify(f"⏰ <b>定时关机</b>\n账户: {account.name}\n时间: {now}")
+
         except Exception as e:
-            await add_log("error", "scheduler", f"[{account.name}] 定时任务失败: {e}")
+            async with AsyncSessionLocal() as db:
+                db.add(Log(level="error", category="scheduler", message=f"[{account.name}] 定时任务失败: {e}"))
+                await db.commit()
 
 
 async def sync_instances():
-    """每2分钟同步一次实例列表和状态"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -168,16 +197,48 @@ async def sync_instances():
                         db.add(new_inst)
                 await db.commit()
         except Exception as e:
-            await add_log("error", "system", f"[{account.name}] 实例同步失败: {e}")
+            async with AsyncSessionLocal() as db:
+                db.add(Log(level="error", category="system", message=f"[{account.name}] 实例同步失败: {e}"))
+                await db.commit()
+
+
+async def daily_traffic_report():
+    """每日北京时间 00:00 发送流量汇报"""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Account).where(Account.enabled == True))
+        accounts = result.scalars().all()
+        result2 = await db.execute(select(Instance))
+        instances = result2.scalars().all()
+
+    instance_map = {i.account_id: i for i in instances}
+
+    lines = ["📊 <b>每日流量汇报</b>", f"时间: {datetime.now().strftime('%Y-%m-%d 00:00')} (北京时间)", ""]
+
+    for account in accounts:
+        inst = instance_map.get(account.id)
+        if inst:
+            bar_filled = int((inst.traffic_percent or 0) / 10)
+            bar = "█" * bar_filled + "░" * (10 - bar_filled)
+            status_icon = "🟢" if inst.status == "Running" else "🔴"
+            lines.append(
+                f"{status_icon} <b>{account.name}</b>\n"
+                f"  流量: {inst.traffic_used_gb:.2f}GB / {account.traffic_limit_gb}GB\n"
+                f"  [{bar}] {inst.traffic_percent:.1f}%\n"
+                f"  熔断阈值: {account.threshold_percent}%\n"
+                f"  状态: {inst.status}"
+            )
+        else:
+            lines.append(f"⚪ <b>{account.name}</b>\n  暂无实例数据")
+
+    await send_tg_notify("\n".join(lines))
+    await add_important_log("system", "每日流量汇报已发送")
 
 
 def start_scheduler():
-    # 流量巡检每10分钟
     scheduler.add_job(traffic_check, IntervalTrigger(minutes=10), id="traffic_check", replace_existing=True)
-    # 保活每1分钟，实时查API
     scheduler.add_job(keep_alive_check, IntervalTrigger(minutes=1), id="keep_alive", replace_existing=True)
-    # 定时开关机每分钟检查
     scheduler.add_job(scheduled_power, IntervalTrigger(minutes=1), id="scheduled_power", replace_existing=True)
-    # 实例状态同步每2分钟
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
+    # 每日北京时间 00:00 发送流量汇报
+    scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
     scheduler.start()

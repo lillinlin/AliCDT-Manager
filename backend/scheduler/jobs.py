@@ -1,3 +1,8 @@
+以下是合并后的完整代码。该版本不仅保留了之前修复“自定义名称被覆盖”的逻辑，还完美融入了新的 `_do_daily_report` 函数，使得 Telegram 每日播报中能够展示账单和余额信息。
+
+可以直接全选并覆盖 `backend/scheduler/jobs.py` 文件：
+
+```python
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -204,7 +209,7 @@ async def sync_instances():
                     if existing:
                         existing.status = inst["status"]
                         existing.public_ip = inst["public_ip"]
-                        # 核心修复点：删除了覆盖 instance_name 的那行代码
+                        # 保留核心修复点：禁止覆盖自定义 instance_name
                         existing.is_spot = inst["is_spot"]
                         existing.bandwidth_mbps = inst["bandwidth_mbps"]
                         existing.last_synced = datetime.utcnow()
@@ -229,25 +234,51 @@ async def _do_daily_report():
 
     lines = [
         "📊 <b>每日流量汇报</b>",
-        f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M')} (北京时间)",
-        "",
+        f"🕛 {datetime.now().strftime('%Y-%m-%d %H:%M')} 北京时间",
+        "━━━━━━━━━━━━━━━━",
     ]
 
     for account in accounts:
         inst = instance_map.get(account.id)
+        status_icon = "🟢" if (inst and inst.status == "Running") else "🔴"
+
         if inst:
             bar_filled = int((inst.traffic_percent or 0) / 10)
             bar = "█" * bar_filled + "░" * (10 - bar_filled)
-            status_icon = "🟢" if inst.status == "Running" else "🔴"
-            lines.append(
-                f"{status_icon} <b>{account.name}</b>\n"
-                f"  流量: {inst.traffic_used_gb:.2f}GB / {account.traffic_limit_gb}GB\n"
-                f"  [{bar}] {inst.traffic_percent:.1f}%\n"
-                f"  熔断阈值: {account.threshold_percent}%\n"
-                f"  状态: {inst.status}"
+            
+            # 使用自定义名称（如果存在），否则后备使用账户名称
+            display_name = inst.instance_name or account.name 
+            
+            block = (
+                f"{status_icon} <b>{display_name}</b>\n"
+                f"  📡 流量: {inst.traffic_used_gb:.2f}GB / {account.traffic_limit_gb}GB\n"
+                f"  [{bar}] {inst.traffic_percent:.1f}%  熔断: {account.threshold_percent}%\n"
+                f"  🖥 状态: {inst.status}  地域: {inst.region_id or '—'}"
             )
+            # 拉取账单
+            try:
+                client = AliyunClient(
+                    account.access_key_id, account.access_key_secret,
+                    account.region_id, account.site_type,
+                )
+                balance = await client.get_balance()
+                bill = await client.get_bill_overview()
+                
+                # 安全获取符号和金额，避免 API 返回异常结构
+                symbol = balance.get("symbol", "$") if balance else "$"
+                avail = balance.get("available_amount", 0) if balance else 0
+                outst = bill.get("total_outstanding", 0) if bill else 0
+                
+                block += (
+                    f"\n  💰 余额: {symbol}{avail}  待还: {symbol}{outst}"
+                )
+            except Exception:
+                block += "\n  💰 账单获取失败"
         else:
-            lines.append(f"⚪ <b>{account.name}</b>\n  暂无实例数据")
+            block = f"⚪ <b>{account.name}</b>\n  暂无实例数据"
+
+        lines.append(block)
+        lines.append("━━━━━━━━━━━━━━━━")
 
     await send_tg_notify("\n".join(lines))
     await add_important_log("system", "每日流量汇报已发送")
@@ -267,3 +298,5 @@ def start_scheduler():
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
     scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
     scheduler.start()
+
+```

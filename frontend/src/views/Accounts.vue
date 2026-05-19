@@ -46,7 +46,6 @@
       </div>
     </div>
 
-    <!-- 添加/编辑弹窗 -->
     <Modal v-if="showForm" @close="showForm = false">
       <div class="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
         <h2 class="font-semibold text-text">{{ editTarget ? '编辑账户' : '添加账户' }}</h2>
@@ -110,15 +109,19 @@
             <span class="text-sm text-text">开启抢占式保活</span>
           </label>
 
+          <!-- 关机在前，开机在后 -->
           <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs text-text-muted mb-1 block">定时开机</label>
-              <input v-model="form.auto_start_time" type="time" class="input" />
-            </div>
             <div>
               <label class="text-xs text-text-muted mb-1 block">定时关机</label>
               <input v-model="form.auto_stop_time" type="time" class="input" />
             </div>
+            <div>
+              <label class="text-xs text-text-muted mb-1 block">定时开机</label>
+              <input v-model="form.auto_start_time" type="time" class="input" />
+            </div>
+          </div>
+          <div class="text-xs text-text-muted bg-surface rounded-lg px-3 py-2">
+            💡 开启保活时，定时关机期间保活会自动暂停，定时开机后恢复
           </div>
         </div>
 
@@ -135,7 +138,6 @@
       </div>
     </Modal>
 
-    <!-- 删除确认 -->
     <Modal v-if="deleteTarget" @close="deleteTarget = null">
       <div class="text-center space-y-4">
         <div class="text-4xl">🗑️</div>
@@ -170,7 +172,7 @@ const defaultForm = () => ({
   region_id: 'ap-southeast-1', site_type: 'international',
   instance_id: '', traffic_limit_gb: 200, threshold_percent: 95,
   shutdown_mode: 'StopCharging', keep_alive: false,
-  auto_start_time: null, auto_stop_time: null,
+  auto_stop_time: null, auto_start_time: null,
 })
 
 const form = ref(defaultForm())

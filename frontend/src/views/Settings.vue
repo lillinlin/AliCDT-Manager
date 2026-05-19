@@ -14,7 +14,7 @@
       </div>
       <div>
         <label class="text-xs text-text-muted mb-1.5 block">Chat ID</label>
-        <input v-model="form.tg_chat_id" class="input" placeholder="5412725363" />
+        <input v-model="form.tg_chat_id" class="input" placeholder="123..." />
       </div>
 
       <!-- 每日流量汇报开关 -->

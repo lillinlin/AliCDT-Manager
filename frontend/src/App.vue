@@ -1,64 +1,86 @@
 <template>
-  <div v-if="isLogin" class="min-h-screen">
-    <router-view />
-  </div>
+  <div class="min-h-screen bg-background text-text font-sans antialiased">
+    <!-- 登录页 -->
+    <div v-if="isLogin">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </div>
 
-  <div v-else class="flex min-h-screen">
-    <!-- 侧边栏 -->
-    <aside class="w-56 flex-shrink-0 flex flex-col glass border-r border-border fixed h-full z-20">
-      <!-- Logo -->
-      <div class="px-5 py-5 border-b border-border">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-accent flex items-center justify-center text-sm glow-pulse">🛡️</div>
-          <div>
-            <div class="text-sm font-semibold text-text">AliCDT Manager</div>
-            <div class="text-[10px] text-text-muted">流量守护</div>
+    <!-- 主应用台 -->
+    <div v-else class="flex min-h-screen">
+      <!-- 侧边栏 -->
+      <aside class="w-64 flex-shrink-0 flex flex-col bg-surface/80 backdrop-blur-xl border-r border-border fixed h-full z-30 transition-all duration-300">
+        <!-- Logo区 -->
+        <div class="h-20 flex items-center px-6 border-b border-border/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-accent/10 flex items-center justify-center border border-accent/20 shadow-[0_0_15px_rgba(var(--accent),0.2)]">
+              <span class="text-xl animate-pulse">🛡️</span>
+            </div>
+            <div>
+              <h1 class="text-base font-bold tracking-tight">AliCDT Manager</h1>
+              <p class="text-xs text-text-muted font-medium">流量守护</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 导航 -->
-      <nav class="flex-1 p-3 space-y-1 relative">
-        <!-- 滑动指示器 -->
-        <div
-          class="absolute left-3 right-3 rounded-xl bg-accent/10 border border-accent/20 transition-all duration-200 ease-out pointer-events-none"
-          :style="indicatorStyle"
-        ></div>
+        <!-- 导航菜单 -->
+        <nav class="flex-1 px-4 py-6 relative">
+          <!-- 滑动指示器：改为使用 transform 实现 GPU 加速，计算更精准 -->
+          <div
+            class="absolute left-4 right-4 h-11 rounded-xl bg-accent/10 border border-accent/20 transition-transform duration-300 cubic-bezier(0.4, 0, 0.2, 1) pointer-events-none"
+            :style="{ transform: `translateY(${activeIndex * 52}px)` }"
+          ></div>
 
-        <div
-          v-for="item in navItems"
-          :key="item.path"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm cursor-pointer transition-colors duration-150 relative"
-          :class="currentPath === item.path ? 'text-accent' : 'text-text-muted hover:text-text hover:bg-white/5'"
-          @click="navigate(item.path)"
-        >
-          <span class="text-base">{{ item.icon }}</span>
-          <span class="font-medium">{{ item.label }}</span>
+          <!-- 导航项列表 -->
+          <div class="flex flex-col gap-2 relative z-10">
+            <div
+              v-for="(item, index) in navItems"
+              :key="item.path"
+              class="flex items-center gap-3 px-4 h-11 rounded-xl text-sm font-medium cursor-pointer transition-colors duration-200"
+              :class="activeIndex === index ? 'text-accent' : 'text-text-muted hover:text-text hover:bg-surface-hover/50'"
+              @click="navigate(item.path)"
+            >
+              <span class="text-lg opacity-80 transition-opacity" :class="{ 'opacity-100': activeIndex === index }">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </div>
+          </div>
+        </nav>
+
+        <!-- 底部操作 -->
+        <div class="p-4 border-t border-border/50">
+          <button @click="logout"
+            class="w-full flex items-center justify-center gap-2 px-4 h-11 rounded-xl text-sm font-medium text-text-muted hover:text-danger hover:bg-danger/10 transition-colors duration-200 group">
+            <span class="group-hover:-translate-x-1 transition-transform duration-200">🚪</span>
+            <span>退出登录</span>
+          </button>
         </div>
-      </nav>
+      </aside>
 
-      <!-- 底部 -->
-      <div class="p-3 border-t border-border">
-        <button @click="logout"
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-text-muted hover:text-danger hover:bg-danger/5 transition-all duration-200">
-          <span>🚪</span><span>退出登录</span>
-        </button>
-      </div>
-    </aside>
-
-    <!-- 主内容区 -->
-    <main class="ml-56 flex-1 min-h-screen">
-      <router-view />
-    </main>
+      <!-- 主内容区 -->
+      <main class="ml-64 flex-1 min-h-screen bg-background relative overflow-x-hidden">
+        <div class="p-8 max-w-7xl mx-auto">
+          <!-- 路由过渡动画 -->
+          <router-view v-slot="{ Component }">
+            <transition name="fade-slide" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
+        </div>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
+
 const isLogin = computed(() => route.path === '/login')
 
 const navItems = [
@@ -68,33 +90,51 @@ const navItems = [
   { path: '/settings', icon: '⚙️', label: '系统设置' },
 ]
 
-const currentPath = ref(route.path)
+// 智能计算激活状态：废弃容易脱节的 watch，改用纯 computed
+// 增加了对子路由（如 /accounts/detail）的高亮支持
+const activeIndex = computed(() => {
+  const index = navItems.findIndex(item => {
+    if (item.path === '/') return route.path === '/'
+    return route.path.startsWith(item.path)
+  })
+  return index === -1 ? 0 : index
+})
 
-// 立即同步，不等路由完成
 function navigate(path) {
-  currentPath.value = path
   router.push(path)
 }
-
-// 保持同步（浏览器前进后退）
-watch(() => route.path, (p) => {
-  currentPath.value = p
-})
-
-// 计算滑动指示器位置
-const indicatorStyle = computed(() => {
-  const index = navItems.findIndex(item => item.path === currentPath.value)
-  const i = index === -1 ? 0 : index
-  // 每个item高度约44px，间距4px
-  const top = i * 48 + 4
-  return {
-    top: `${top}px`,
-    height: '40px',
-  }
-})
 
 function logout() {
   localStorage.removeItem('token')
   router.push('/login')
 }
 </script>
+
+<style scoped>
+/* 路由切换：缩放与透明度融合的现代过渡效果 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(15px) scale(0.99);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-15px) scale(0.99);
+}
+
+/* 基础渐变效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

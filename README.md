@@ -1,6 +1,6 @@
 # 🛡️ AliCDT-Manager
 
-阿里云 CDT 流量监控与自动化管理控制台。
+阿里云 CDT 流量监控与自动化管理控制台
 
 ## ✨ 功能
 
@@ -54,6 +54,7 @@ docker compose up -d
 ![1](READMEimages/1.png)  
 ![2](READMEimages/2.png)  
 ![3](READMEimages/3.png)  
+![5](READMEimages/5.png)  
 
 ## Nginx Cloudflare 配置示例
 

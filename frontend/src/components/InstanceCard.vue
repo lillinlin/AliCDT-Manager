@@ -9,18 +9,25 @@
           <h3 class="text-base font-semibold text-text truncate transition-colors group-hover/edit:text-accent">
             {{ instance.instance_name || instance.instance_id }}
           </h3>
-          <span class="opacity-0 group-hover/edit:opacity-100 text-text-muted transition-opacity text-xs bg-surface-hover px-1.5 py-0.5 rounded-md border border-border">
+          <span class="opacity-0 group-hover/edit:opacity-100 text-text-muted transition-opacity text-xs bg-surface-hover px-1.5 py-0.5 rounded-md border border-border whitespace-nowrap flex-shrink-0">
             编辑
           </span>
         </div>
         <div v-else class="flex items-center gap-2">
-          <input v-model="newName" 
-            class="input py-1 px-2 text-sm flex-1 bg-surface border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg transition-all"
+          <input v-model="newName" :disabled="isSavingName"
+            class="input py-1 px-2 text-sm flex-1 bg-surface border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg transition-all disabled:opacity-50"
             @keyup.enter="saveName" @keyup.escape="editingName=false" autofocus 
             placeholder="输入新名称" />
           <div class="flex gap-1 flex-shrink-0">
-            <button @click="saveName" class="w-7 h-7 flex items-center justify-center rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors">✓</button>
-            <button @click="editingName=false" class="w-7 h-7 flex items-center justify-center rounded-md bg-surface text-text-muted hover:bg-danger/10 hover:text-danger transition-colors">✕</button>
+            <button @click="saveName" :disabled="isSavingName" 
+              class="w-7 h-7 flex items-center justify-center rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors disabled:opacity-50">
+              <span v-if="isSavingName" class="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin"></span>
+              <span v-else>✓</span>
+            </button>
+            <button @click="editingName=false" :disabled="isSavingName" 
+              class="w-7 h-7 flex items-center justify-center rounded-md bg-surface text-text-muted hover:bg-danger/10 hover:text-danger transition-colors disabled:opacity-50">
+              ✕
+            </button>
           </div>
         </div>
         <div class="text-xs text-text-muted font-mono mt-1 truncate opacity-70">{{ instance.instance_id }}</div>
@@ -148,6 +155,7 @@ const billingLoading = ref(false)
 const billingError = ref('')
 const editingName = ref(false)
 const newName = ref('')
+const isSavingName = ref(false)
 
 const REGION_MAP = {
   'cn-hangzhou':     { flag: '🇨🇳', label: '中国 杭州' },
@@ -206,9 +214,26 @@ function startEditName() {
 }
 
 async function saveName() {
-  if (!newName.value.trim()) return
-  await store.renameInstance(props.instance.instance_id, newName.value.trim())
-  editingName.value = false
+  const val = newName.value.trim()
+  
+  // 如果为空，或者名字根本没改，直接退出编辑模式
+  if (!val || val === props.instance.instance_name) {
+    editingName.value = false
+    return
+  }
+
+  isSavingName.value = true
+  try {
+    // 提交给 store/后端
+    await store.renameInstance(props.instance.instance_id, val)
+    editingName.value = false
+  } catch (error) {
+    // 拦截错误并提示
+    alert('名称修改失败: ' + (error.message || '请检查后端日志或网络状态'))
+    console.error('Rename failed:', error)
+  } finally {
+    isSavingName.value = false
+  }
 }
 
 async function loadBilling() {

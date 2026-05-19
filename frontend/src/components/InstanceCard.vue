@@ -1,132 +1,149 @@
 <template>
-  <div class="card p-5 space-y-4 hover:border-accent/30 transition-all duration-200">
-
-    <!-- 顶部：名称可编辑 + 状态 -->
-    <div class="flex items-start justify-between gap-2">
+  <!-- 卡片主容器：引入玻璃拟态、更柔和的阴影与悬浮微动效 -->
+  <div class="relative flex flex-col p-5 rounded-2xl bg-surface/40 backdrop-blur-lg border border-border/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:border-accent/40 transition-all duration-300 group/card">
+    
+    <!-- 顶部：标题区域与状态 -->
+    <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
+        <!-- 展示模式 -->
         <div v-if="!editingName"
-          class="font-medium text-text text-sm flex items-center gap-1 cursor-pointer group"
+          class="flex items-center gap-2 cursor-pointer group/edit"
           @click="startEditName">
-          <span class="truncate">{{ instance.instance_name || instance.instance_id }}</span>
-          <span class="text-text-muted opacity-0 group-hover:opacity-100 text-xs flex-shrink-0">✏️</span>
+          <h3 class="text-base font-semibold text-text truncate transition-colors group-hover/edit:text-accent">
+            {{ instance.instance_name || instance.instance_id }}
+          </h3>
+          <span class="opacity-0 group-hover/edit:opacity-100 text-text-muted transition-opacity text-xs bg-surface-hover px-1.5 py-0.5 rounded-md border border-border">
+            编辑
+          </span>
         </div>
-        <div v-else class="flex items-center gap-1">
-          <input v-model="newName" class="input py-0.5 text-sm flex-1"
-            @keyup.enter="saveName" @keyup.escape="editingName=false" autofocus />
-          <button @click="saveName" class="text-xs text-accent px-1 hover:text-accent-light">✓</button>
-          <button @click="editingName=false" class="text-xs text-text-muted px-1">✕</button>
+        <!-- 编辑模式 -->
+        <div v-else class="flex items-center gap-2">
+          <input v-model="newName" 
+            class="input py-1 px-2 text-sm flex-1 bg-surface border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg transition-all"
+            @keyup.enter="saveName" @keyup.escape="editingName=false" autofocus 
+            placeholder="输入新名称" />
+          <div class="flex gap-1 flex-shrink-0">
+            <button @click="saveName" class="w-7 h-7 flex items-center justify-center rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors">✓</button>
+            <button @click="editingName=false" class="w-7 h-7 flex items-center justify-center rounded-md bg-surface text-text-muted hover:bg-danger/10 hover:text-danger transition-colors">✕</button>
+          </div>
         </div>
-        <div class="text-xs text-text-muted font-mono mt-0.5 truncate">{{ instance.instance_id }}</div>
+        <div class="text-xs text-text-muted font-mono mt-1 truncate opacity-70">{{ instance.instance_id }}</div>
       </div>
-      <span :class="statusBadge" class="flex-shrink-0">{{ statusLabel }}</span>
+
+      <!-- 国旗与状态徽章 -->
+      <div class="flex flex-col items-end gap-1.5 flex-shrink-0">
+        <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface/50 border border-border/50" :title="regionLabel">
+          <span class="text-base leading-none drop-shadow-sm">{{ regionFlag }}</span>
+          <span class="text-xs text-text font-medium">{{ instance.region_id || '未知' }}</span>
+        </div>
+        <div class="px-2 py-0.5 rounded-full text-[11px] font-medium tracking-wide flex items-center gap-1.5 border border-transparent shadow-sm" :class="statusBadge">
+          <span class="w-1.5 h-1.5 rounded-full animate-pulse" :class="instance.status === 'Running' ? 'bg-current' : 'bg-current opacity-50'"></span>
+          {{ statusLabel.replace('● ', '') }}
+        </div>
+      </div>
     </div>
 
-    <!-- 流量进度条 -->
-    <div>
-      <div class="flex justify-between text-xs mb-1.5">
-        <span class="text-text-muted">本月流量</span>
-        <span :class="trafficColor" class="font-medium font-mono">
-          {{ instance.traffic_used_gb?.toFixed(2) || '0.00' }} GB / {{ account?.traffic_limit_gb || 200 }} GB
+    <!-- 流量进度条区域：增加发光质感与层次 -->
+    <div class="mt-5 p-3 rounded-xl bg-surface-hover/30 border border-border/30">
+      <div class="flex justify-between text-xs mb-2">
+        <span class="text-text-muted font-medium">本月流量消耗</span>
+        <span :class="trafficColor" class="font-bold font-mono tracking-tight">
+          {{ instance.traffic_used_gb?.toFixed(2) || '0.00' }} <span class="text-text-muted font-normal">/ {{ account?.traffic_limit_gb || 200 }} GB</span>
         </span>
       </div>
-      <div class="h-1.5 bg-border rounded-full overflow-hidden">
-        <div class="h-full rounded-full transition-all duration-700"
+      <div class="h-2 bg-background/50 rounded-full overflow-hidden shadow-inner relative">
+        <div class="h-full rounded-full transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1) relative"
           :class="trafficBarColor"
           :style="{ width: Math.min(instance.traffic_percent || 0, 100) + '%' }">
+          <div class="absolute inset-0 bg-white/20 w-full animate-[pulse_2s_ease-in-out_infinite]"></div>
         </div>
       </div>
-      <div class="flex justify-between text-xs mt-1">
-        <span class="text-text-muted">熔断阈值 {{ account?.threshold_percent || 95 }}%</span>
-        <span :class="trafficColor">{{ (instance.traffic_percent || 0).toFixed(1) }}%</span>
+      <div class="flex justify-between text-[11px] mt-2">
+        <span class="text-text-muted">熔断阈值 <span class="font-medium text-text">{{ account?.threshold_percent || 95 }}%</span></span>
+        <span :class="trafficColor" class="font-medium">{{ (instance.traffic_percent || 0).toFixed(1) }}%</span>
       </div>
     </div>
 
-    <!-- 信息行 -->
-    <div class="grid grid-cols-2 gap-2 text-xs">
-      <div class="bg-surface rounded-lg px-3 py-2">
-        <div class="text-text-muted mb-0.5">公网 IP</div>
-        <div class="font-mono text-text">{{ instance.public_ip || '—' }}</div>
+    <!-- 核心信息网格：现代化卡片质感 -->
+    <div class="grid grid-cols-2 gap-2 mt-4 text-xs">
+      <div class="bg-surface-hover/40 border border-border/40 rounded-xl px-3 py-2.5 hover:bg-surface-hover/60 transition-colors">
+        <div class="text-text-muted mb-1 text-[11px] uppercase tracking-wider">公网 IP</div>
+        <div class="font-mono text-text font-medium">{{ instance.public_ip || '—' }}</div>
       </div>
-      <div class="bg-surface rounded-lg px-3 py-2">
-        <div class="text-text-muted mb-0.5">规格</div>
-        <div class="text-text truncate">{{ instance.instance_type || '—' }}</div>
-      </div>
-      <div class="bg-surface rounded-lg px-3 py-2">
-        <div class="text-text-muted mb-0.5">地域</div>
-        <div class="text-text">{{ instance.region_id || '—' }}</div>
-      </div>
-      <div class="bg-surface rounded-lg px-3 py-2">
-        <div class="text-text-muted mb-0.5">实例类型</div>
-        <div :class="instance.is_spot ? 'text-warning' : 'text-text'">
-          {{ instance.is_spot ? '⚡ 抢占式' : '按需' }}
-        </div>
+      <div class="bg-surface-hover/40 border border-border/40 rounded-xl px-3 py-2.5 hover:bg-surface-hover/60 transition-colors">
+        <div class="text-text-muted mb-1 text-[11px] uppercase tracking-wider">规格</div>
+        <div class="text-text font-medium truncate" :title="instance.instance_type">{{ instance.instance_type || '—' }}</div>
       </div>
     </div>
 
-    <!-- 功能状态标签 -->
-    <div class="flex flex-wrap gap-1.5 text-xs">
+    <!-- 功能状态标签：优化对比度与排版 -->
+    <div class="flex flex-wrap gap-2 mt-4 text-[11px]">
       <span v-if="account?.keep_alive"
-        class="px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent flex items-center gap-1">
-        <span class="w-1.5 h-1.5 bg-accent rounded-full glow-pulse inline-block"></span>
-        保活中（每1分钟巡检）
+        class="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-medium flex items-center gap-1.5 shadow-sm">
+        <span class="w-1.5 h-1.5 bg-accent rounded-full animate-ping inline-block"></span>
+        自动保活中
       </span>
-      <span v-else class="px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted">
-        未开启保活
+      <span v-if="account?.auto_stop_time || account?.auto_start_time"
+        class="px-2.5 py-1 rounded-md bg-warning/10 border border-warning/20 text-warning-dark font-medium flex items-center gap-1 shadow-sm">
+        ⏰ 
+        <span v-if="account?.auto_stop_time">{{ account.auto_stop_time }} 关</span>
+        <span v-if="account?.auto_stop_time && account?.auto_start_time" class="opacity-50 px-0.5">|</span>
+        <span v-if="account?.auto_start_time">{{ account.auto_start_time }} 开</span>
       </span>
-      <span v-if="account?.auto_start_time || account?.auto_stop_time"
-        class="px-2 py-0.5 rounded-full bg-warning/10 border border-warning/20 text-warning">
-        ⏰ 定时任务
-        {{ account?.auto_start_time ? '开机 ' + account.auto_start_time : '' }}
-        {{ account?.auto_stop_time ? '关机 ' + account.auto_stop_time : '' }}
-      </span>
-      <span class="px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted">
+      <span class="px-2.5 py-1 rounded-md bg-surface border border-border text-text-muted font-medium shadow-sm">
         {{ account?.shutdown_mode === 'StopCharging' ? '节省停机' : '普通停机' }}
       </span>
     </div>
 
-    <!-- 账单信息 -->
-    <div class="bg-surface rounded-lg px-3 py-2.5 text-xs space-y-1.5">
-      <div class="text-text-muted font-medium mb-1">账单信息</div>
-      <div v-if="billingLoading" class="text-text-muted text-center py-1">加载中...</div>
-      <div v-else-if="billingError" class="text-danger text-center py-1">{{ billingError }}</div>
-      <template v-else>
-        <div class="flex justify-between">
+    <!-- 账单信息：财务面板样式 -->
+    <div class="mt-4 bg-gradient-to-br from-surface to-surface-hover/50 border border-border/50 rounded-xl px-3.5 py-3 text-xs shadow-sm">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-text-muted font-semibold tracking-wide">账单动态</span>
+        <span v-if="billingLoading" class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
+      </div>
+      <div v-if="billingError" class="text-danger text-center py-1 bg-danger/5 rounded-md">{{ billingError }}</div>
+      <div v-else-if="!billingLoading" class="space-y-1.5">
+        <div class="flex justify-between items-center">
           <span class="text-text-muted">账户余额</span>
-          <span class="font-mono"
+          <span class="font-mono text-sm font-semibold"
             :class="(billing?.balance?.available_amount ?? 0) < 1 ? 'text-danger' : 'text-success'">
             {{ billing?.balance?.symbol }}{{ billing?.balance?.available_amount ?? '—' }}
           </span>
         </div>
-        <div class="flex justify-between">
-          <span class="text-text-muted">本月待还款</span>
-          <span class="font-mono text-warning">
+        <div class="flex justify-between items-center">
+          <span class="text-text-muted">本月待还</span>
+          <span class="font-mono font-medium" :class="(billing?.bill?.total_outstanding ?? 0) > 0 ? 'text-warning' : 'text-text'">
             {{ billing?.bill?.symbol }}{{ billing?.bill?.total_outstanding ?? '—' }}
           </span>
         </div>
-      </template>
+      </div>
     </div>
 
-    <!-- 账户 + 同步时间 -->
-    <div class="flex items-center justify-between text-xs text-text-muted">
-      <span>{{ account?.name || '未知账户' }}</span>
-      <span v-if="instance.last_synced">最后同步 {{ formatTime(instance.last_synced) }}</span>
+    <!-- 底部垫片（将操作按钮推至底部） -->
+    <div class="flex-1"></div>
+
+    <!-- 账号及同步信息 -->
+    <div class="flex items-center justify-between text-[11px] text-text-muted mt-5 mb-3 px-1">
+      <span class="flex items-center gap-1"><span class="text-xs">🔑</span> {{ account?.name || '未知账户' }}</span>
+      <span v-if="instance.last_synced" class="opacity-70">同步于 {{ formatTime(instance.last_synced) }}</span>
     </div>
 
-    <!-- 操作按钮 -->
-    <div class="flex gap-2 pt-1 border-t border-border">
+    <!-- 操作按钮区：扩大点击区域，增加触觉反馈感 -->
+    <div class="flex gap-2.5 pt-3 border-t border-border/60">
       <button v-if="instance.status !== 'Running'" @click="$emit('start')"
-        class="flex-1 text-xs py-2 rounded-lg bg-success/10 hover:bg-success/20 text-success transition-all">
-        ▶ 开机
+        class="flex-1 text-xs font-medium py-2.5 rounded-xl bg-success/10 border border-success/20 hover:bg-success hover:text-white text-success transition-all duration-200 shadow-sm hover:shadow-success/30 active:scale-95">
+        ▶ 启动实例
       </button>
       <button v-if="instance.status === 'Running'" @click="$emit('stop')"
-        class="flex-1 text-xs py-2 rounded-lg bg-warning/10 hover:bg-warning/20 text-warning transition-all">
-        ⏹ 停机
+        class="flex-1 text-xs font-medium py-2.5 rounded-xl bg-warning/10 border border-warning/20 hover:bg-warning hover:text-white text-warning-dark transition-all duration-200 shadow-sm hover:shadow-warning/30 active:scale-95">
+        ⏹ 停止实例
       </button>
       <button @click="$emit('release')"
-        class="text-xs px-3 py-2 rounded-lg bg-danger/5 hover:bg-danger/15 text-danger transition-all">
+        class="text-xs font-medium px-4 py-2.5 rounded-xl bg-danger/5 border border-danger/10 hover:bg-danger hover:text-white text-danger transition-all duration-200 shadow-sm hover:shadow-danger/30 active:scale-95">
         释放
       </button>
     </div>
+
   </div>
 </template>
 
@@ -144,10 +161,48 @@ const billingError = ref('')
 const editingName = ref(false)
 const newName = ref('')
 
+const REGION_MAP = {
+  'cn-hangzhou':     { flag: '🇨🇳', label: '中国 杭州' },
+  'cn-shanghai':     { flag: '🇨🇳', label: '中国 上海' },
+  'cn-beijing':      { flag: '🇨🇳', label: '中国 北京' },
+  'cn-shenzhen':     { flag: '🇨🇳', label: '中国 深圳' },
+  'cn-zhangjiakou':  { flag: '🇨🇳', label: '中国 张家口' },
+  'cn-huhehaote':    { flag: '🇨🇳', label: '中国 呼和浩特' },
+  'cn-wulanchabu':   { flag: '🇨🇳', label: '中国 乌兰察布' },
+  'cn-qingdao':      { flag: '🇨🇳', label: '中国 青岛' },
+  'cn-heyuan':       { flag: '🇨🇳', label: '中国 河源' },
+  'cn-guangzhou':    { flag: '🇨🇳', label: '中国 广州' },
+  'cn-chengdu':      { flag: '🇨🇳', label: '中国 成都' },
+  'cn-hongkong':     { flag: '🇭🇰', label: '中国 香港' },
+  'ap-southeast-1':  { flag: '🇸🇬', label: '新加坡' },
+  'ap-southeast-2':  { flag: '🇦🇺', label: '澳大利亚 悉尼' },
+  'ap-southeast-3':  { flag: '🇲🇾', label: '马来西亚 吉隆坡' },
+  'ap-southeast-5':  { flag: '🇮🇩', label: '印度尼西亚 雅加达' },
+  'ap-southeast-6':  { flag: '🇵🇭', label: '菲律宾 马尼拉' },
+  'ap-southeast-7':  { flag: '🇹🇭', label: '泰国 曼谷' },
+  'ap-northeast-1':  { flag: '🇯🇵', label: '日本 东京' },
+  'ap-northeast-2':  { flag: '🇰🇷', label: '韩国 首尔' },
+  'ap-south-1':      { flag: '🇮🇳', label: '印度 孟买' },
+  'us-west-1':       { flag: '🇺🇸', label: '美国 硅谷' },
+  'us-east-1':       { flag: '🇺🇸', label: '美国 弗吉尼亚' },
+  'eu-west-1':       { flag: '🇬🇧', label: '英国 伦敦' },
+  'eu-central-1':    { flag: '🇩🇪', label: '德国 法兰克福' },
+  'me-east-1':       { flag: '🇦🇪', label: '阿联酋 迪拜' },
+}
+
+// 修复了原代码中 setup 作用域内对 instance 未定义引用的问题
+const regionInfo = computed(() => {
+  const region = props.instance?.region_id || ''
+  return REGION_MAP[region] || { flag: '🌐', label: region }
+})
+
+const regionFlag = computed(() => regionInfo.value.flag)
+const regionLabel = computed(() => regionInfo.value.label)
+
 const statusBadge = computed(() => ({
-  Running: 'badge-running',
-  Stopped: 'badge-stopped',
-}[props.instance.status] || 'badge-unknown'))
+  Running: 'badge-running text-success bg-success/10 border-success/20',
+  Stopped: 'badge-stopped text-text-muted bg-surface-hover border-border',
+}[props.instance.status] || 'badge-unknown text-warning bg-warning/10 border-warning/20'))
 
 const statusLabel = computed(() => ({
   Running: '● 运行中',

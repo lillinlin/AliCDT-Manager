@@ -59,7 +59,13 @@ export const useStore = defineStore('main', () => {
 
   async function controlInstance(instanceId, action) {
     await api.post(`/instances/${instanceId}/${action}`)
-    setTimeout(fetchInstances, 2000)
+    // 发送指令后快速轮询状态，最多查6次每3秒一次
+    let count = 0
+    const poll = setInterval(async () => {
+      await fetchInstances()
+      count++
+      if (count >= 6) clearInterval(poll)
+    }, 3000)
   }
 
   async function releaseInstance(instanceId) {

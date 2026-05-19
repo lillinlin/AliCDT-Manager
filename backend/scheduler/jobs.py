@@ -204,7 +204,7 @@ async def sync_instances():
                     if existing:
                         existing.status = inst["status"]
                         existing.public_ip = inst["public_ip"]
-                        existing.instance_name = inst.get("instance_name") or existing.instance_name
+                        # 核心修复点：删除了覆盖 instance_name 的那行代码
                         existing.is_spot = inst["is_spot"]
                         existing.bandwidth_mbps = inst["bandwidth_mbps"]
                         existing.last_synced = datetime.utcnow()

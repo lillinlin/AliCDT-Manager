@@ -1,11 +1,8 @@
 <template>
-  <!-- 卡片主容器：引入玻璃拟态、更柔和的阴影与悬浮微动效 -->
   <div class="relative flex flex-col p-5 rounded-2xl bg-surface/40 backdrop-blur-lg border border-border/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:border-accent/40 transition-all duration-300 group/card">
     
-    <!-- 顶部：标题区域与状态 -->
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
-        <!-- 展示模式 -->
         <div v-if="!editingName"
           class="flex items-center gap-2 cursor-pointer group/edit"
           @click="startEditName">
@@ -16,7 +13,6 @@
             编辑
           </span>
         </div>
-        <!-- 编辑模式 -->
         <div v-else class="flex items-center gap-2">
           <input v-model="newName" 
             class="input py-1 px-2 text-sm flex-1 bg-surface border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg transition-all"
@@ -30,10 +26,9 @@
         <div class="text-xs text-text-muted font-mono mt-1 truncate opacity-70">{{ instance.instance_id }}</div>
       </div>
 
-      <!-- 国旗与状态徽章 -->
       <div class="flex flex-col items-end gap-1.5 flex-shrink-0">
         <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface/50 border border-border/50" :title="regionLabel">
-          <span class="text-base leading-none drop-shadow-sm">{{ regionFlag }}</span>
+          <span class="text-base leading-none drop-shadow-sm font-emoji">{{ regionFlag }}</span>
           <span class="text-xs text-text font-medium">{{ instance.region_id || '未知' }}</span>
         </div>
         <div class="px-2 py-0.5 rounded-full text-[11px] font-medium tracking-wide flex items-center gap-1.5 border border-transparent shadow-sm" :class="statusBadge">
@@ -43,7 +38,6 @@
       </div>
     </div>
 
-    <!-- 流量进度条区域：增加发光质感与层次 -->
     <div class="mt-5 p-3 rounded-xl bg-surface-hover/30 border border-border/30">
       <div class="flex justify-between text-xs mb-2">
         <span class="text-text-muted font-medium">本月流量消耗</span>
@@ -64,7 +58,6 @@
       </div>
     </div>
 
-    <!-- 核心信息网格：现代化卡片质感 -->
     <div class="grid grid-cols-2 gap-2 mt-4 text-xs">
       <div class="bg-surface-hover/40 border border-border/40 rounded-xl px-3 py-2.5 hover:bg-surface-hover/60 transition-colors">
         <div class="text-text-muted mb-1 text-[11px] uppercase tracking-wider">公网 IP</div>
@@ -76,7 +69,6 @@
       </div>
     </div>
 
-    <!-- 功能状态标签：优化对比度与排版 -->
     <div class="flex flex-wrap gap-2 mt-4 text-[11px]">
       <span v-if="account?.keep_alive"
         class="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent font-medium flex items-center gap-1.5 shadow-sm">
@@ -95,7 +87,6 @@
       </span>
     </div>
 
-    <!-- 账单信息：财务面板样式 -->
     <div class="mt-4 bg-gradient-to-br from-surface to-surface-hover/50 border border-border/50 rounded-xl px-3.5 py-3 text-xs shadow-sm">
       <div class="flex justify-between items-center mb-2">
         <span class="text-text-muted font-semibold tracking-wide">账单动态</span>
@@ -119,16 +110,13 @@
       </div>
     </div>
 
-    <!-- 底部垫片（将操作按钮推至底部） -->
     <div class="flex-1"></div>
 
-    <!-- 账号及同步信息 -->
     <div class="flex items-center justify-between text-[11px] text-text-muted mt-5 mb-3 px-1">
       <span class="flex items-center gap-1"><span class="text-xs">🔑</span> {{ account?.name || '未知账户' }}</span>
       <span v-if="instance.last_synced" class="opacity-70">同步于 {{ formatTime(instance.last_synced) }}</span>
     </div>
 
-    <!-- 操作按钮区：扩大点击区域，增加触觉反馈感 -->
     <div class="flex gap-2.5 pt-3 border-t border-border/60">
       <button v-if="instance.status !== 'Running'" @click="$emit('start')"
         class="flex-1 text-xs font-medium py-2.5 rounded-xl bg-success/10 border border-success/20 hover:bg-success hover:text-white text-success transition-all duration-200 shadow-sm hover:shadow-success/30 active:scale-95">
@@ -190,7 +178,6 @@ const REGION_MAP = {
   'me-east-1':       { flag: '🇦🇪', label: '阿联酋 迪拜' },
 }
 
-// 修复了原代码中 setup 作用域内对 instance 未定义引用的问题
 const regionInfo = computed(() => {
   const region = props.instance?.region_id || ''
   return REGION_MAP[region] || { flag: '🌐', label: region }
@@ -244,3 +231,13 @@ function formatTime(t) {
   return new Date(t + 'Z').toLocaleTimeString('zh-CN', { hour12: false })
 }
 </script>
+
+<style scoped>
+/* 引入 Google 的 Noto Color Emoji 字体库，解决 Windows 国旗不显示问题 */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+
+/* 强制指定 Emoji 字体渲染顺序 */
+.font-emoji {
+  font-family: "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", "Segoe UI Emoji", sans-serif;
+}
+</style>

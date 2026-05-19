@@ -292,8 +292,8 @@ async def test_tg(user=Depends(get_current_user), db: AsyncSession = Depends(get
 
 @app.post("/api/settings/test-daily-report")
 async def test_daily_report(user=Depends(get_current_user)):
-    from scheduler.jobs import daily_traffic_report
-    await daily_traffic_report()
+    from scheduler.jobs import _do_daily_report
+    await _do_daily_report()
     return {"message": "流量汇报已发送"}
 
 

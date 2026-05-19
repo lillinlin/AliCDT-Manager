@@ -17,6 +17,15 @@ async def add_important_log(category: str, message: str):
         await db.commit()
 
 
+async def add_log(level: str, category: str, message: str):
+    if level == "info":
+        return
+    async with AsyncSessionLocal() as db:
+        log = Log(level=level, category=category, message=message)
+        db.add(log)
+        await db.commit()
+
+
 async def get_setting(key: str, default=None):
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Settings).where(Settings.key == key))
@@ -39,15 +48,6 @@ async def send_tg_notify(message: str):
         async with AsyncSessionLocal() as db:
             db.add(Log(level="warning", category="notify", message=f"TG通知发送失败: {e}"))
             await db.commit()
-
-
-async def add_log(level: str, category: str, message: str):
-    if level == "info":
-        return
-    async with AsyncSessionLocal() as db:
-        log = Log(level=level, category=category, message=message)
-        db.add(log)
-        await db.commit()
 
 
 async def traffic_check():
@@ -197,12 +197,8 @@ async def sync_instances():
                 await db.commit()
 
 
-async def daily_traffic_report():
-    """每日北京时间 00:00 发送流量汇报，受开关控制"""
-    enabled = await get_setting("tg_daily_report", "0")
-    if enabled != "1":
-        return
-
+async def _do_daily_report():
+    """实际发送逻辑，不检查开关，测试和定时任务都可以调用"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -213,7 +209,7 @@ async def daily_traffic_report():
 
     lines = [
         "📊 <b>每日流量汇报</b>",
-        f"时间: {datetime.now().strftime('%Y-%m-%d 00:00')} (北京时间)",
+        f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M')} (北京时间)",
         "",
     ]
 
@@ -235,6 +231,14 @@ async def daily_traffic_report():
 
     await send_tg_notify("\n".join(lines))
     await add_important_log("system", "每日流量汇报已发送")
+
+
+async def daily_traffic_report():
+    """定时任务调用，受开关控制"""
+    enabled = await get_setting("tg_daily_report", "0")
+    if enabled != "1":
+        return
+    await _do_daily_report()
 
 
 def start_scheduler():

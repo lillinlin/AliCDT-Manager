@@ -1,8 +1,3 @@
-以下是合并后的完整代码。该版本不仅保留了之前修复“自定义名称被覆盖”的逻辑，还完美融入了新的 `_do_daily_report` 函数，使得 Telegram 每日播报中能够展示账单和余额信息。
-
-可以直接全选并覆盖 `backend/scheduler/jobs.py` 文件：
-
-```python
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -298,5 +293,3 @@ def start_scheduler():
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
     scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
     scheduler.start()
-
-```

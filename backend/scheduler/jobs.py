@@ -76,6 +76,12 @@ async def traffic_check():
             if percent >= account.threshold_percent:
                 if account.instance_id:
                     await client.stop_instance(account.instance_id, account.shutdown_mode)
+                    # 标记为主动关机，保活跳过
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            update(Account).where(Account.id == account.id).values(manual_stopped=True)
+                        )
+                        await db.commit()
                     await send_tg_notify(
                         f"🚨 <b>流量熔断触发</b>\n"
                         f"账户: {account.name}\n"
@@ -100,6 +106,9 @@ async def keep_alive_check():
 
     for account in accounts:
         if not account.instance_id:
+            continue
+        # 主动关机标记存在，跳过保活
+        if account.manual_stopped:
             continue
         try:
             client = AliyunClient(
@@ -146,15 +155,27 @@ async def scheduled_power():
             account.region_id, account.site_type,
         )
         try:
-            if account.auto_start_time and account.auto_start_time == now:
-                await client.start_instance(account.instance_id)
-                await add_important_log("scheduler", f"[{account.name}] 定时开机执行 {now}")
-                await send_tg_notify(f"⏰ <b>定时开机</b>\n账户: {account.name}\n时间: {now}")
-
             if account.auto_stop_time and account.auto_stop_time == now:
                 await client.stop_instance(account.instance_id, account.shutdown_mode)
+                # 标记主动关机，保活跳过
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        update(Account).where(Account.id == account.id).values(manual_stopped=True)
+                    )
+                    await db.commit()
                 await add_important_log("scheduler", f"[{account.name}] 定时关机执行 {now}")
                 await send_tg_notify(f"⏰ <b>定时关机</b>\n账户: {account.name}\n时间: {now}")
+
+            if account.auto_start_time and account.auto_start_time == now:
+                await client.start_instance(account.instance_id)
+                # 清除主动关机标记，恢复保活
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        update(Account).where(Account.id == account.id).values(manual_stopped=False)
+                    )
+                    await db.commit()
+                await add_important_log("scheduler", f"[{account.name}] 定时开机执行 {now}")
+                await send_tg_notify(f"⏰ <b>定时开机</b>\n账户: {account.name}\n时间: {now}")
 
         except Exception as e:
             async with AsyncSessionLocal() as db:
@@ -198,7 +219,6 @@ async def sync_instances():
 
 
 async def _do_daily_report():
-    """实际发送逻辑，不检查开关，测试和定时任务都可以调用"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -234,7 +254,6 @@ async def _do_daily_report():
 
 
 async def daily_traffic_report():
-    """定时任务调用，受开关控制"""
     enabled = await get_setting("tg_daily_report", "0")
     if enabled != "1":
         return

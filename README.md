@@ -102,4 +102,3 @@ server {
 
 - Backend: Python 3.12 + FastAPI + APScheduler + SQLite
 - Frontend: Vue 3 + TailwindCSS
-- Deploy: Docker + GitHub Actions → ghcr.io

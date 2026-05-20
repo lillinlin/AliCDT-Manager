@@ -21,22 +21,42 @@
       <StatCard icon="🛡️" label="保活中" :value="keepAliveCount" color="accent" />
     </div>
 
-    <!-- 实例卡片列表 -->
-    <div v-if="instances.length === 0" class="card p-12 text-center">
+    <!-- 实例卡片列表（支持拖拽排序） -->
+    <div v-if="sortedInstances.length === 0" class="card p-12 text-center">
       <div class="text-4xl mb-3">🌐</div>
       <div class="text-text-muted text-sm">暂无实例，请先添加账户并同步</div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-      <InstanceCard
-        v-for="inst in instances"
+    <div
+      v-else
+      class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"
+    >
+      <div
+        v-for="inst in sortedInstances"
         :key="inst.instance_id"
-        :instance="inst"
-        :account="accountMap[inst.account_id]"
-        @start="store.controlInstance(inst.instance_id, 'start')"
-        @stop="store.controlInstance(inst.instance_id, 'stop')"
-        @release="confirmRelease(inst)"
-      />
+        draggable="true"
+        @dragstart="onDragStart($event, inst.instance_id)"
+        @dragover.prevent="onDragOver($event, inst.instance_id)"
+        @dragend="onDragEnd"
+        @drop.prevent="onDrop($event, inst.instance_id)"
+        :class="[
+          'transition-all duration-200',
+          dragOverId === inst.instance_id && draggingId !== inst.instance_id
+            ? 'scale-[1.02] opacity-80'
+            : '',
+          draggingId === inst.instance_id
+            ? 'opacity-40 scale-95'
+            : '',
+        ]"
+      >
+        <InstanceCard
+          :instance="inst"
+          :account="accountMap[inst.account_id]"
+          @start="store.controlInstance(inst.instance_id, 'start')"
+          @stop="store.controlInstance(inst.instance_id, 'stop')"
+          @release="confirmRelease(inst)"
+        />
+      </div>
     </div>
 
     <!-- 释放确认弹窗 -->
@@ -68,17 +88,75 @@ const store = useStore()
 const releaseTarget = ref(null)
 const now = ref('')
 
+// 拖拽状态
+const draggingId = ref(null)
+const dragOverId = ref(null)
+
+// 自定义排序（持久化到 localStorage）
+const SORT_KEY = 'instance_sort_order'
+const customOrder = ref(JSON.parse(localStorage.getItem(SORT_KEY) || '[]'))
+
 const instances = computed(() => store.instances)
 const runningCount = computed(() => instances.value.filter(i => i.status === 'Running').length)
 const stoppedCount = computed(() => instances.value.filter(i => i.status === 'Stopped').length)
-const keepAliveCount = computed(() => {
-  return store.accounts.filter(a => a.keep_alive).length
-})
+const keepAliveCount = computed(() => store.accounts.filter(a => a.keep_alive).length)
 const accountMap = computed(() => {
   const m = {}
   store.accounts.forEach(a => m[a.id] = a)
   return m
 })
+
+// 按自定义顺序排列实例
+const sortedInstances = computed(() => {
+  const arr = [...instances.value]
+  if (customOrder.value.length === 0) return arr
+  return arr.sort((a, b) => {
+    const ia = customOrder.value.indexOf(a.instance_id)
+    const ib = customOrder.value.indexOf(b.instance_id)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+})
+
+function saveOrder() {
+  const order = sortedInstances.value.map(i => i.instance_id)
+  customOrder.value = order
+  localStorage.setItem(SORT_KEY, JSON.stringify(order))
+}
+
+function onDragStart(e, id) {
+  draggingId.value = id
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', id)
+}
+
+function onDragOver(e, id) {
+  dragOverId.value = id
+}
+
+function onDrop(e, targetId) {
+  const sourceId = draggingId.value
+  if (!sourceId || sourceId === targetId) return
+
+  const order = sortedInstances.value.map(i => i.instance_id)
+  const fromIdx = order.indexOf(sourceId)
+  const toIdx = order.indexOf(targetId)
+  if (fromIdx === -1 || toIdx === -1) return
+
+  // 移动元素
+  order.splice(fromIdx, 1)
+  order.splice(toIdx, 0, sourceId)
+
+  customOrder.value = order
+  localStorage.setItem(SORT_KEY, JSON.stringify(order))
+}
+
+function onDragEnd() {
+  draggingId.value = null
+  dragOverId.value = null
+}
 
 function updateTime() {
   now.value = new Date().toLocaleString('zh-CN', { hour12: false })
@@ -104,5 +182,8 @@ function confirmRelease(inst) {
 async function doRelease() {
   await store.releaseInstance(releaseTarget.value.instance_id)
   releaseTarget.value = null
+  // 清理排序中已释放的实例
+  customOrder.value = customOrder.value.filter(id => id !== releaseTarget.value?.instance_id)
+  localStorage.setItem(SORT_KEY, JSON.stringify(customOrder.value))
 }
 </script>

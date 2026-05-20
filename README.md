@@ -100,5 +100,5 @@ server {
 
 ## Tech Stack
 
-- Backend: Python 3.12 + FastAPI + APScheduler + SQLite
+- Backend: Python + FastAPI + APScheduler + SQLite
 - Frontend: Vue 3 + TailwindCSS

@@ -76,7 +76,6 @@ async def traffic_check():
             if percent >= account.threshold_percent:
                 if account.instance_id:
                     await client.stop_instance(account.instance_id, account.shutdown_mode)
-                    # 标记为主动关机，保活跳过
                     async with AsyncSessionLocal() as db:
                         await db.execute(
                             update(Account).where(Account.id == account.id).values(manual_stopped=True)
@@ -107,7 +106,6 @@ async def keep_alive_check():
     for account in accounts:
         if not account.instance_id:
             continue
-        # 主动关机标记存在，跳过保活
         if account.manual_stopped:
             continue
         try:
@@ -135,10 +133,8 @@ async def keep_alive_check():
                 )
                 await add_important_log("keepalive", f"[{account.name}] 实例 {account.instance_id} 被回收，已自动拉起")
 
-        except Exception as e:
-            async with AsyncSessionLocal() as db:
-                db.add(Log(level="error", category="keepalive", message=f"[{account.name}] 保活检测失败: {e}"))
-                await db.commit()
+        except Exception:
+            pass  # 网络抖动等临时失败，静默跳过
 
 
 async def scheduled_power():
@@ -157,7 +153,6 @@ async def scheduled_power():
         try:
             if account.auto_stop_time and account.auto_stop_time == now:
                 await client.stop_instance(account.instance_id, account.shutdown_mode)
-                # 标记主动关机，保活跳过
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         update(Account).where(Account.id == account.id).values(manual_stopped=True)
@@ -168,7 +163,6 @@ async def scheduled_power():
 
             if account.auto_start_time and account.auto_start_time == now:
                 await client.start_instance(account.instance_id)
-                # 清除主动关机标记，恢复保活
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         update(Account).where(Account.id == account.id).values(manual_stopped=False)
@@ -204,7 +198,6 @@ async def sync_instances():
                     if existing:
                         existing.status = inst["status"]
                         existing.public_ip = inst["public_ip"]
-                        # 保留核心修复点：禁止覆盖自定义 instance_name
                         existing.is_spot = inst["is_spot"]
                         existing.bandwidth_mbps = inst["bandwidth_mbps"]
                         existing.last_synced = datetime.utcnow()
@@ -212,10 +205,8 @@ async def sync_instances():
                         new_inst = Instance(account_id=account.id, **inst)
                         db.add(new_inst)
                 await db.commit()
-        except Exception as e:
-            async with AsyncSessionLocal() as db:
-                db.add(Log(level="error", category="system", message=f"[{account.name}] 实例同步失败: {e}"))
-                await db.commit()
+        except Exception:
+            pass  # 网络抖动等临时失败，静默跳过
 
 
 async def _do_daily_report():
@@ -240,17 +231,13 @@ async def _do_daily_report():
         if inst:
             bar_filled = int((inst.traffic_percent or 0) / 10)
             bar = "█" * bar_filled + "░" * (10 - bar_filled)
-            
-            # 使用自定义名称（如果存在），否则后备使用账户名称
-            display_name = inst.instance_name or account.name 
-            
+            display_name = inst.instance_name or account.name
             block = (
                 f"{status_icon} <b>{display_name}</b>\n"
                 f"  📡 流量: {inst.traffic_used_gb:.2f}GB / {account.traffic_limit_gb}GB\n"
                 f"  [{bar}] {inst.traffic_percent:.1f}%  熔断: {account.threshold_percent}%\n"
                 f"  🖥 状态: {inst.status}  地域: {inst.region_id or '—'}"
             )
-            # 拉取账单
             try:
                 client = AliyunClient(
                     account.access_key_id, account.access_key_secret,
@@ -258,15 +245,10 @@ async def _do_daily_report():
                 )
                 balance = await client.get_balance()
                 bill = await client.get_bill_overview()
-                
-                # 安全获取符号和金额，避免 API 返回异常结构
                 symbol = balance.get("symbol", "$") if balance else "$"
                 avail = balance.get("available_amount", 0) if balance else 0
                 outst = bill.get("total_outstanding", 0) if bill else 0
-                
-                block += (
-                    f"\n  💰 余额: {symbol}{avail}  待还: {symbol}{outst}"
-                )
+                block += f"\n  💰 余额: {symbol}{avail}  待还: {symbol}{outst}"
             except Exception:
                 block += "\n  💰 账单获取失败"
         else:

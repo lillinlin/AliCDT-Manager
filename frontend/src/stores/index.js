@@ -57,11 +57,14 @@ export const useStore = defineStore('main', () => {
     loading.value = false
   }
 
+  async function syncSingleInstance(instanceId) {
+    await api.post(`/instances/${instanceId}/sync`)
+    await fetchInstances()
+  }
+
   async function controlInstance(instanceId, action) {
     await api.post(`/instances/${instanceId}/${action}`)
-    // 立即刷新一次
     await fetchInstances()
-    // 每2秒轮询，检测到目标状态或超时30秒停止
     const targetStatus = action === 'start' ? 'Running' : 'Stopped'
     let count = 0
     return new Promise((resolve) => {
@@ -122,7 +125,7 @@ export const useStore = defineStore('main', () => {
   return {
     instances, accounts, logs, settings, loading,
     login, fetchInstances, fetchAccounts, fetchLogs, fetchSettings,
-    syncAll, controlInstance, releaseInstance, getBilling,
+    syncAll, syncSingleInstance, controlInstance, releaseInstance, getBilling,
     createAccount, updateAccount, deleteAccount, saveSettings, clearLogs,
     renameInstance,
   }

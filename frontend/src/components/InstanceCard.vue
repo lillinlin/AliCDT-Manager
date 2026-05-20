@@ -1,6 +1,13 @@
 <template>
   <div class="relative flex flex-col p-5 rounded-2xl bg-surface/40 backdrop-blur-lg border border-border/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:border-accent/40 transition-all duration-300 group/card">
-    
+
+    <!-- 拖拽手柄 -->
+    <div class="flex justify-center mb-3 opacity-0 group-hover/card:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+      <div class="flex gap-0.5 items-center">
+        <div v-for="i in 6" :key="i" class="w-0.5 h-3 bg-border rounded-full"></div>
+      </div>
+    </div>
+
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
         <div v-if="!editingName"
@@ -16,15 +23,15 @@
         <div v-else class="flex items-center gap-2">
           <input v-model="newName" :disabled="isSavingName"
             class="input py-1 px-2 text-sm flex-1 bg-surface border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg transition-all disabled:opacity-50"
-            @keyup.enter="saveName" @keyup.escape="editingName=false" autofocus 
+            @keyup.enter="saveName" @keyup.escape="editingName=false" autofocus
             placeholder="输入新名称" />
           <div class="flex gap-1 flex-shrink-0">
-            <button @click="saveName" :disabled="isSavingName" 
+            <button @click="saveName" :disabled="isSavingName"
               class="w-7 h-7 flex items-center justify-center rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors disabled:opacity-50">
               <span v-if="isSavingName" class="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin"></span>
               <span v-else>✓</span>
             </button>
-            <button @click="editingName=false" :disabled="isSavingName" 
+            <button @click="editingName=false" :disabled="isSavingName"
               class="w-7 h-7 flex items-center justify-center rounded-md bg-surface text-text-muted hover:bg-danger/10 hover:text-danger transition-colors disabled:opacity-50">
               ✕
             </button>
@@ -53,10 +60,10 @@
         </span>
       </div>
       <div class="h-2 bg-background/50 rounded-full overflow-hidden shadow-inner relative">
-        <div class="h-full rounded-full transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1) relative"
+        <div class="h-full rounded-full transition-all duration-1000 relative"
           :class="trafficBarColor"
           :style="{ width: Math.min(instance.traffic_percent || 0, 100) + '%' }">
-          <div class="absolute inset-0 bg-white/20 w-full animate-[pulse_2s_ease-in-out_infinite]"></div>
+          <div class="absolute inset-0 bg-white/20 w-full animate-pulse"></div>
         </div>
       </div>
       <div class="flex justify-between text-[11px] mt-2">
@@ -84,7 +91,7 @@
       </span>
       <span v-if="account?.auto_stop_time || account?.auto_start_time"
         class="px-2.5 py-1 rounded-md bg-warning/10 border border-warning/20 text-warning-dark font-medium flex items-center gap-1 shadow-sm">
-        ⏰ 
+        ⏰
         <span v-if="account?.auto_stop_time">{{ account.auto_stop_time }} 关</span>
         <span v-if="account?.auto_stop_time && account?.auto_start_time" class="opacity-50 px-0.5">|</span>
         <span v-if="account?.auto_start_time">{{ account.auto_start_time }} 开</span>
@@ -215,22 +222,16 @@ function startEditName() {
 
 async function saveName() {
   const val = newName.value.trim()
-  
-  // 如果为空，或者名字根本没改，直接退出编辑模式
   if (!val || val === props.instance.instance_name) {
     editingName.value = false
     return
   }
-
   isSavingName.value = true
   try {
-    // 提交给 store/后端
     await store.renameInstance(props.instance.instance_id, val)
     editingName.value = false
   } catch (error) {
-    // 拦截错误并提示
     alert('名称修改失败: ' + (error.message || '请检查后端日志或网络状态'))
-    console.error('Rename failed:', error)
   } finally {
     isSavingName.value = false
   }
@@ -258,10 +259,8 @@ function formatTime(t) {
 </script>
 
 <style scoped>
-/* 引入 Google 的 Noto Color Emoji 字体库，解决 Windows 国旗不显示问题 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 
-/* 强制指定 Emoji 字体渲染顺序 */
 .font-emoji {
   font-family: "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", "Segoe UI Emoji", sans-serif;
 }

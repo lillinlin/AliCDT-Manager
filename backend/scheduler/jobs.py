@@ -73,27 +73,34 @@ async def traffic_check():
                 )
                 await db.commit()
 
-            if percent >= account.threshold_percent:
+            # 熔断判断：只在未标记 manual_stopped 时才触发，避免重复关机和重复通知
+            if percent >= account.threshold_percent and not account.manual_stopped:
                 if account.instance_id:
-                    await client.stop_instance(account.instance_id, account.shutdown_mode)
+                    # 先检查实例当前状态，已经停机就不重复操作
                     async with AsyncSessionLocal() as db:
-                        await db.execute(
-                            update(Account).where(Account.id == account.id).values(manual_stopped=True)
+                        inst_result = await db.execute(
+                            select(Instance).where(Instance.instance_id == account.instance_id)
                         )
-                        await db.commit()
-                    await send_tg_notify(
-                        f"🚨 <b>流量熔断触发</b>\n"
-                        f"账户: {account.name}\n"
-                        f"已用: {traffic_gb}GB ({percent}%)\n"
-                        f"阈值: {account.threshold_percent}%\n"
-                        f"动作: 自动停机（{account.shutdown_mode}）"
-                    )
-                    await add_important_log("traffic", f"[{account.name}] 流量熔断 {traffic_gb}GB/{percent}%，已停机")
+                        inst = inst_result.scalar_one_or_none()
 
-        except Exception as e:
-            async with AsyncSessionLocal() as db:
-                db.add(Log(level="error", category="traffic", message=f"[{account.name}] 流量巡检失败: {e}"))
-                await db.commit()
+                    if inst and inst.status != "Stopped":
+                        await client.stop_instance(account.instance_id, account.shutdown_mode)
+                        async with AsyncSessionLocal() as db:
+                            await db.execute(
+                                update(Account).where(Account.id == account.id).values(manual_stopped=True)
+                            )
+                            await db.commit()
+                        await send_tg_notify(
+                            f"🚨 <b>流量熔断触发</b>\n"
+                            f"账户: {account.name}\n"
+                            f"已用: {traffic_gb}GB ({percent}%)\n"
+                            f"阈值: {account.threshold_percent}%\n"
+                            f"动作: 自动停机（{account.shutdown_mode}）"
+                        )
+                        await add_important_log("traffic", f"[{account.name}] 流量熔断 {traffic_gb}GB/{percent}%，已停机")
+
+        except Exception:
+            pass  # 流量巡检临时失败，静默跳过
 
 
 async def keep_alive_check():
@@ -134,7 +141,7 @@ async def keep_alive_check():
                 await add_important_log("keepalive", f"[{account.name}] 实例 {account.instance_id} 被回收，已自动拉起")
 
         except Exception:
-            pass  # 网络抖动等临时失败，静默跳过
+            pass
 
 
 async def scheduled_power():
@@ -206,7 +213,46 @@ async def sync_instances():
                         db.add(new_inst)
                 await db.commit()
         except Exception:
-            pass  # 网络抖动等临时失败，静默跳过
+            pass
+
+
+async def monthly_reset():
+    """每月1号00:00，清除所有账户的 manual_stopped 标记，恢复保活和巡检"""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Account).where(Account.enabled == True))
+        accounts = result.scalars().all()
+
+    restarted = []
+    for account in accounts:
+        if not account.manual_stopped:
+            continue
+        try:
+            # 清除熔断标记
+            async with AsyncSessionLocal() as db:
+                await db.execute(
+                    update(Account).where(Account.id == account.id).values(manual_stopped=False)
+                )
+                await db.commit()
+
+            # 如果配置了实例ID，尝试启动
+            if account.instance_id:
+                client = AliyunClient(
+                    account.access_key_id, account.access_key_secret,
+                    account.region_id, account.site_type,
+                )
+                await client.start_instance(account.instance_id)
+                restarted.append(account.name)
+
+        except Exception:
+            pass
+
+    if restarted:
+        await send_tg_notify(
+            f"🔄 <b>每月流量重置</b>\n"
+            f"新的一个月开始，以下账户已自动恢复并启动：\n"
+            + "\n".join(f"  • {name}" for name in restarted)
+        )
+        await add_important_log("system", f"每月重置，已恢复并启动: {', '.join(restarted)}")
 
 
 async def _do_daily_report():
@@ -274,4 +320,6 @@ def start_scheduler():
     scheduler.add_job(scheduled_power, IntervalTrigger(minutes=1), id="scheduled_power", replace_existing=True)
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
     scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
+    # 每月2号00:01 重置熔断标记并自动启动
+    scheduler.add_job(monthly_reset, CronTrigger(day=2, hour=0, minute=1), id="monthly_reset", replace_existing=True)
     scheduler.start()

@@ -132,13 +132,29 @@
     </div>
 
     <div class="flex gap-2.5 pt-3 border-t border-border/60">
-      <button v-if="instance.status !== 'Running'" @click="$emit('start')"
-        class="flex-1 text-xs font-medium py-2.5 rounded-xl bg-success/10 border border-success/20 hover:bg-success hover:text-white text-success transition-all duration-200 shadow-sm hover:shadow-success/30 active:scale-95">
-        ▶ 启动实例
+      <button
+        v-if="instance.status !== 'Running'"
+        @click="handleStart"
+        :disabled="isStarting"
+        class="flex-1 text-xs font-medium py-2.5 rounded-xl transition-all duration-200 shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+        :class="isStarting
+          ? 'bg-surface border border-border text-text-muted cursor-not-allowed'
+          : 'bg-success/10 border border-success/20 hover:bg-success hover:text-white text-success hover:shadow-success/30'"
+      >
+        <span v-if="isStarting" class="w-3 h-3 border-2 border-text-muted border-t-transparent rounded-full animate-spin"></span>
+        <span>{{ isStarting ? '启动中...' : '▶ 启动实例' }}</span>
       </button>
-      <button v-if="instance.status === 'Running'" @click="$emit('stop')"
-        class="flex-1 text-xs font-medium py-2.5 rounded-xl bg-warning/10 border border-warning/20 hover:bg-warning hover:text-white text-warning-dark transition-all duration-200 shadow-sm hover:shadow-warning/30 active:scale-95">
-        ⏹ 停止实例
+      <button
+        v-if="instance.status === 'Running'"
+        @click="handleStop"
+        :disabled="isStopping"
+        class="flex-1 text-xs font-medium py-2.5 rounded-xl transition-all duration-200 shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+        :class="isStopping
+          ? 'bg-surface border border-border text-text-muted cursor-not-allowed'
+          : 'bg-warning/10 border border-warning/20 hover:bg-warning hover:text-white text-warning-dark hover:shadow-warning/30'"
+      >
+        <span v-if="isStopping" class="w-3 h-3 border-2 border-text-muted border-t-transparent rounded-full animate-spin"></span>
+        <span>{{ isStopping ? '停止中...' : '⏹ 停止实例' }}</span>
       </button>
       <button @click="$emit('release')"
         class="text-xs font-medium px-4 py-2.5 rounded-xl bg-danger/5 border border-danger/10 hover:bg-danger hover:text-white text-danger transition-all duration-200 shadow-sm hover:shadow-danger/30 active:scale-95">
@@ -154,7 +170,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useStore } from '../stores'
 
 const props = defineProps({ instance: Object, account: Object })
-defineEmits(['start', 'stop', 'release'])
+defineEmits(['release'])
 
 const store = useStore()
 const billing = ref(null)
@@ -163,6 +179,8 @@ const billingError = ref('')
 const editingName = ref(false)
 const newName = ref('')
 const isSavingName = ref(false)
+const isStarting = ref(false)
+const isStopping = ref(false)
 
 const REGION_MAP = {
   'cn-hangzhou':     { flag: '🇨🇳', label: '中国 杭州' },
@@ -197,7 +215,6 @@ const regionInfo = computed(() => {
   const region = props.instance?.region_id || ''
   return REGION_MAP[region] || { flag: '🌐', label: region }
 })
-
 const regionFlag = computed(() => regionInfo.value.flag)
 const regionLabel = computed(() => regionInfo.value.label)
 
@@ -234,6 +251,26 @@ async function saveName() {
     alert('名称修改失败: ' + (error.message || '请检查后端日志或网络状态'))
   } finally {
     isSavingName.value = false
+  }
+}
+
+async function handleStart() {
+  if (isStarting.value) return
+  isStarting.value = true
+  try {
+    await store.controlInstance(props.instance.instance_id, 'start')
+  } finally {
+    isStarting.value = false
+  }
+}
+
+async function handleStop() {
+  if (isStopping.value) return
+  isStopping.value = true
+  try {
+    await store.controlInstance(props.instance.instance_id, 'stop')
+  } finally {
+    isStopping.value = false
   }
 }
 

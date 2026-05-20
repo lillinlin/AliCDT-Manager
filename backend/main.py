@@ -179,6 +179,27 @@ async def manual_sync(user=Depends(get_current_user)):
     return {"message": "同步完成"}
 
 
+@app.post("/api/instances/{instance_id}/sync")
+async def sync_single_instance(instance_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Instance).where(Instance.instance_id == instance_id))
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise HTTPException(status_code=404)
+    result = await db.execute(select(Account).where(Account.id == inst.account_id))
+    acc = result.scalar_one_or_none()
+    client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
+    status = await client.get_instance_status(instance_id)
+    traffic_gb = await client.get_cdt_traffic()
+    limit = acc.traffic_limit_gb or 200.0
+    percent = round(traffic_gb / limit * 100, 2)
+    inst.status = status
+    inst.traffic_used_gb = traffic_gb
+    inst.traffic_percent = percent
+    inst.last_synced = datetime.utcnow()
+    await db.commit()
+    return {"message": "同步完成", "status": status, "traffic_gb": traffic_gb, "percent": percent}
+
+
 @app.patch("/api/instances/{instance_id}/rename")
 async def rename_instance(instance_id: str, data: RenameRequest, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Instance).where(Instance.instance_id == instance_id))
@@ -200,6 +221,10 @@ async def start_instance(instance_id: str, user=Depends(get_current_user), db: A
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.start_instance(instance_id)
+    # 启动时清除 manual_stopped 标记
+    from sqlalchemy import update
+    await db.execute(update(Account).where(Account.id == acc.id).values(manual_stopped=False))
+    await db.commit()
     await add_important_log("system", f"手动开机: {instance_id}")
     return {"message": "开机指令已发送"}
 
@@ -214,6 +239,10 @@ async def stop_instance(instance_id: str, user=Depends(get_current_user), db: As
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.stop_instance(instance_id, acc.shutdown_mode)
+    # 手动关机也标记，避免保活干扰
+    from sqlalchemy import update
+    await db.execute(update(Account).where(Account.id == acc.id).values(manual_stopped=True))
+    await db.commit()
     await add_important_log("system", f"手动关机: {instance_id}")
     return {"message": "关机指令已发送"}
 

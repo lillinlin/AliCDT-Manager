@@ -59,13 +59,22 @@ export const useStore = defineStore('main', () => {
 
   async function controlInstance(instanceId, action) {
     await api.post(`/instances/${instanceId}/${action}`)
-    // 发送指令后快速轮询状态，最多查6次每3秒一次
+    // 立即刷新一次
+    await fetchInstances()
+    // 每2秒轮询，检测到目标状态或超时30秒停止
+    const targetStatus = action === 'start' ? 'Running' : 'Stopped'
     let count = 0
-    const poll = setInterval(async () => {
-      await fetchInstances()
-      count++
-      if (count >= 6) clearInterval(poll)
-    }, 3000)
+    return new Promise((resolve) => {
+      const poll = setInterval(async () => {
+        await fetchInstances()
+        count++
+        const inst = instances.value.find(i => i.instance_id === instanceId)
+        if ((inst && inst.status === targetStatus) || count >= 15) {
+          clearInterval(poll)
+          resolve()
+        }
+      }, 2000)
+    })
   }
 
   async function releaseInstance(instanceId) {

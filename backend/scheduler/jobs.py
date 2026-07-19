@@ -73,34 +73,45 @@ async def traffic_check():
                 )
                 await db.commit()
 
-            # 熔断判断：只在未标记 manual_stopped 时才触发，避免重复关机和重复通知
-            if percent >= account.threshold_percent and not account.manual_stopped:
-                if account.instance_id:
-                    # 先检查实例当前状态，已经停机就不重复操作
-                    async with AsyncSessionLocal() as db:
-                        inst_result = await db.execute(
-                            select(Instance).where(Instance.instance_id == account.instance_id)
-                        )
-                        inst = inst_result.scalar_one_or_none()
+            trigger_reason = None
 
-                    if inst and inst.status != "Stopped":
-                        await client.stop_instance(account.instance_id, account.shutdown_mode)
-                        async with AsyncSessionLocal() as db:
-                            await db.execute(
-                                update(Account).where(Account.id == account.id).values(manual_stopped=True)
-                            )
-                            await db.commit()
-                        await send_tg_notify(
-                            f"🚨 <b>流量熔断触发</b>\n"
-                            f"账户: {account.name}\n"
-                            f"已用: {traffic_gb}GB ({percent}%)\n"
-                            f"阈值: {account.threshold_percent}%\n"
-                            f"动作: 自动停机（{account.shutdown_mode}）"
+            if percent >= account.threshold_percent and not account.manual_stopped:
+                trigger_reason = f"流量超阈值 {traffic_gb}GB/{percent}%（阈值{account.threshold_percent}%）"
+
+            if not trigger_reason and account.outstanding_threshold and account.outstanding_threshold > 0 and not account.manual_stopped:
+                try:
+                    bill = await client.get_bill_overview()
+                    outstanding = bill.get("total_outstanding", 0)
+                    if outstanding >= account.outstanding_threshold:
+                        symbol = bill.get("symbol", "$")
+                        trigger_reason = f"待还金额超阈值 {symbol}{outstanding}（阈值{symbol}{account.outstanding_threshold}）"
+                except Exception:
+                    pass
+
+            if trigger_reason and account.instance_id:
+                async with AsyncSessionLocal() as db:
+                    inst_result = await db.execute(
+                        select(Instance).where(Instance.instance_id == account.instance_id)
+                    )
+                    inst = inst_result.scalar_one_or_none()
+
+                if inst and inst.status != "Stopped":
+                    await client.stop_instance(account.instance_id, account.shutdown_mode)
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            update(Account).where(Account.id == account.id).values(manual_stopped=True)
                         )
-                        await add_important_log("traffic", f"[{account.name}] 流量熔断 {traffic_gb}GB/{percent}%，已停机")
+                        await db.commit()
+                    await send_tg_notify(
+                        f"🚨 <b>熔断触发</b>\n"
+                        f"账户: {account.name}\n"
+                        f"原因: {trigger_reason}\n"
+                        f"动作: 自动停机（{account.shutdown_mode}）"
+                    )
+                    await add_important_log("traffic", f"[{account.name}] 熔断: {trigger_reason}，已停机")
 
         except Exception:
-            pass  # 流量巡检临时失败，静默跳过
+            pass
 
 
 async def keep_alive_check():
@@ -217,7 +228,6 @@ async def sync_instances():
 
 
 async def monthly_reset():
-    """每月1号00:00，清除所有账户的 manual_stopped 标记，恢复保活和巡检"""
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -227,14 +237,12 @@ async def monthly_reset():
         if not account.manual_stopped:
             continue
         try:
-            # 清除熔断标记
             async with AsyncSessionLocal() as db:
                 await db.execute(
                     update(Account).where(Account.id == account.id).values(manual_stopped=False)
                 )
                 await db.commit()
 
-            # 如果配置了实例ID，尝试启动
             if account.instance_id:
                 client = AliyunClient(
                     account.access_key_id, account.access_key_secret,
@@ -320,6 +328,5 @@ def start_scheduler():
     scheduler.add_job(scheduled_power, IntervalTrigger(minutes=1), id="scheduled_power", replace_existing=True)
     scheduler.add_job(sync_instances, IntervalTrigger(minutes=2), id="sync_instances", replace_existing=True)
     scheduler.add_job(daily_traffic_report, CronTrigger(hour=0, minute=0), id="daily_report", replace_existing=True)
-    # 每月2号00:01 重置熔断标记并自动启动
-    scheduler.add_job(monthly_reset, CronTrigger(day=2, hour=0, minute=1), id="monthly_reset", replace_existing=True)
+    scheduler.add_job(monthly_reset, CronTrigger(day=1, hour=0, minute=1), id="monthly_reset", replace_existing=True)
     scheduler.start()

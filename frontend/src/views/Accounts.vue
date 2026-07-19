@@ -29,14 +29,18 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-3 mt-4 text-xs">
+        <div class="grid grid-cols-4 gap-3 mt-4 text-xs">
           <div class="bg-surface rounded-lg px-3 py-2">
             <div class="text-text-muted mb-0.5">流量上限</div>
             <div class="text-text">{{ acc.traffic_limit_gb }} GB</div>
           </div>
           <div class="bg-surface rounded-lg px-3 py-2">
-            <div class="text-text-muted mb-0.5">熔断阈值</div>
+            <div class="text-text-muted mb-0.5">流量熔断</div>
             <div class="text-text">{{ acc.threshold_percent }}%</div>
+          </div>
+          <div class="bg-surface rounded-lg px-3 py-2">
+            <div class="text-text-muted mb-0.5">待还熔断</div>
+            <div class="text-text">{{ acc.outstanding_threshold > 0 ? acc.outstanding_threshold : '未启用' }}</div>
           </div>
           <div class="bg-surface rounded-lg px-3 py-2">
             <div class="text-text-muted mb-0.5">停机模式</div>
@@ -88,9 +92,14 @@
               <input v-model.number="form.traffic_limit_gb" type="number" class="input" />
             </div>
             <div>
-              <label class="text-xs text-text-muted mb-1 block">熔断阈值 (%)</label>
+              <label class="text-xs text-text-muted mb-1 block">流量熔断阈值 (%)</label>
               <input v-model.number="form.threshold_percent" type="number" class="input" />
             </div>
+          </div>
+          <div>
+            <label class="text-xs text-text-muted mb-1 block">待还金额熔断阈值（0表示不启用）</label>
+            <input v-model.number="form.outstanding_threshold" type="number" step="0.01" class="input" placeholder="例如 0.45" />
+            <div class="text-[11px] text-text-muted mt-1">当账户待还款金额达到此数值时自动停机</div>
           </div>
           <div>
             <label class="text-xs text-text-muted mb-1 block">停机模式</label>
@@ -109,7 +118,6 @@
             <span class="text-sm text-text">开启抢占式保活</span>
           </label>
 
-          <!-- 关机在前，开机在后 -->
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-text-muted mb-1 block">定时关机</label>
@@ -171,6 +179,7 @@ const defaultForm = () => ({
   name: '', access_key_id: '', access_key_secret: '',
   region_id: 'ap-southeast-1', site_type: 'international',
   instance_id: '', traffic_limit_gb: 200, threshold_percent: 95,
+  outstanding_threshold: 0,
   shutdown_mode: 'StopCharging', keep_alive: false,
   auto_stop_time: null, auto_start_time: null,
 })

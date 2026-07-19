@@ -17,6 +17,7 @@ class Account(Base):
     instance_id = Column(String, nullable=True)
     traffic_limit_gb = Column(Float, default=200.0)
     threshold_percent = Column(Float, default=95.0)
+    outstanding_threshold = Column(Float, default=0.0)
     shutdown_mode = Column(String, default="StopCharging")
     keep_alive = Column(Boolean, default=False)
     auto_start_time = Column(String, nullable=True)

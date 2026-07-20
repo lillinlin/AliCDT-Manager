@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from jose import jwt
@@ -71,6 +71,7 @@ class AccountCreate(BaseModel):
     instance_id: Optional[str] = None
     traffic_limit_gb: float = 200.0
     threshold_percent: float = 95.0
+    outstanding_threshold: float = 0.0
     shutdown_mode: str = "StopCharging"
     keep_alive: bool = False
     auto_start_time: Optional[str] = None
@@ -221,8 +222,6 @@ async def start_instance(instance_id: str, user=Depends(get_current_user), db: A
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.start_instance(instance_id)
-    # 启动时清除 manual_stopped 标记
-    from sqlalchemy import update
     await db.execute(update(Account).where(Account.id == acc.id).values(manual_stopped=False))
     await db.commit()
     await add_important_log("system", f"手动开机: {instance_id}")
@@ -239,8 +238,6 @@ async def stop_instance(instance_id: str, user=Depends(get_current_user), db: As
     acc = result.scalar_one_or_none()
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     await client.stop_instance(instance_id, acc.shutdown_mode)
-    # 手动关机也标记，避免保活干扰
-    from sqlalchemy import update
     await db.execute(update(Account).where(Account.id == acc.id).values(manual_stopped=True))
     await db.commit()
     await add_important_log("system", f"手动关机: {instance_id}")

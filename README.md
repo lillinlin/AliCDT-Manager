@@ -32,7 +32,7 @@ AliyunCDTFullAccess
 AliyunBSSFullAccess
 ```
 
-## 🚀 docker一键安装
+## 🚀 一键安装
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/install.sh)
@@ -44,7 +44,7 @@ ports:
 在安装完成需要配置 Nginx 反代通过域名访问
 
 
-## 🛠 docker手动部署
+## 🛠 手动部署
 
 ```bash
 mkdir -p /app/alicdt-manager/data && cd /app/alicdt-manager

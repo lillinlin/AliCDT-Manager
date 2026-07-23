@@ -1,6 +1,13 @@
 # 🛡️ AliCDT-Manager
 
-阿里云 CDT 流量监控与自动化管理控制台
+**阿里云 CDT 流量监控与自动化管理控制台**
+
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue?logo=docker)](https://github.com/lillinlin/AliCDT-Manager/pkgs/container/alicdt-manager)
+[![GitHub](https://img.shields.io/badge/GitHub-lillinlin-black?logo=github)](https://github.com/lillinlin/AliCDT-Manager)
+
+</div>
+
+---
 
 ## ✨ 功能
 
@@ -25,7 +32,7 @@ AliyunCDTFullAccess
 AliyunBSSFullAccess
 ```
 
-## 🚀 一键安装
+## 🚀 docker一键安装
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/lillinlin/AliCDT-Manager/main/install.sh)
@@ -37,7 +44,7 @@ ports:
 在安装完成需要配置 Nginx 反代通过域名访问
 
 
-## 🛠 手动部署
+## 🛠 docker手动部署
 
 ```bash
 mkdir -p /app/alicdt-manager/data && cd /app/alicdt-manager
@@ -99,6 +106,28 @@ server {
 }
 
 ```
+
+---
+
+## 📋 常用命令
+
+```bash
+# 重启服务
+cd /app/alicdt-manager && docker compose restart
+
+# 更新到最新镜像
+cd /app/alicdt-manager && docker compose pull && docker compose up -d
+
+# 停止服务
+cd /app/alicdt-manager && docker compose down
+
+# 卸载（保留数据）
+cd /app/alicdt-manager && docker compose down
+
+# 彻底卸载（含数据）
+cd /app/alicdt-manager && docker compose down && rm -rf /app/alicdt-manager
+```
+
 
 ## Tech Stack
 

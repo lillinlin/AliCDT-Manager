@@ -118,13 +118,10 @@ cd /app/alicdt-manager && docker compose restart
 # 更新到最新镜像
 cd /app/alicdt-manager && docker compose pull && docker compose up -d
 
-# 停止服务
+# 停止服务/卸载（保留数据）
 cd /app/alicdt-manager && docker compose down
 
-# 卸载（保留数据）
-cd /app/alicdt-manager && docker compose down
-
-# 彻底卸载（含数据）
+# 彻底卸载
 cd /app/alicdt-manager && docker compose down && rm -rf /app/alicdt-manager
 ```
 

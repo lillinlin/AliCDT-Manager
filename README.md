@@ -106,5 +106,5 @@ server {
 - Frontend: Vue 3 + TailwindCSS
 
 
-## 如感觉不错，可在NS论坛帮楼主顶顶贴，谢谢
+## Nodeseek
 https://www.nodeseek.com/post-737919-1

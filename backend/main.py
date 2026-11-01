@@ -14,12 +14,15 @@ from passlib.context import CryptContext
 
 from models.database import init_db, get_db, Account, Instance, Log, Settings
 from core.aliyun import AliyunClient
-from scheduler.jobs import start_scheduler, sync_instances, traffic_check, add_important_log
+from scheduler.jobs import (
+    start_scheduler, sync_instances, traffic_check,
+    add_important_log, cleanup_orphan_instances,
+)
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-change-me")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-CURRENT_VERSION = "1.2"
+CURRENT_VERSION = "1.3"
 
 
 def create_token(username: str):
@@ -55,6 +58,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.on_event("startup")
 async def startup():
     await init_db()
+    await cleanup_orphan_instances()
     start_scheduler()
 
 
@@ -185,7 +189,10 @@ async def delete_account(account_id: int, user=Depends(get_current_user), db: As
 
 @app.get("/api/instances")
 async def list_instances(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Instance))
+    # 只返回所属账户仍然存在的实例，避免孤儿数据显示在总览
+    result = await db.execute(
+        select(Instance).where(Instance.account_id.in_(select(Account.id)))
+    )
     instances = result.scalars().all()
     return [{k: v for k, v in i.__dict__.items() if k != "_sa_instance_state"} for i in instances]
 
@@ -205,6 +212,8 @@ async def sync_single_instance(instance_id: str, user=Depends(get_current_user),
         raise HTTPException(status_code=404)
     result = await db.execute(select(Account).where(Account.id == inst.account_id))
     acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="所属账户不存在")
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     try:
         status = await client.get_instance_status(instance_id)
@@ -240,6 +249,8 @@ async def start_instance(instance_id: str, user=Depends(get_current_user), db: A
         raise HTTPException(status_code=404)
     result = await db.execute(select(Account).where(Account.id == inst.account_id))
     acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="所属账户不存在")
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     try:
         await client.start_instance(instance_id)
@@ -259,6 +270,8 @@ async def stop_instance(instance_id: str, user=Depends(get_current_user), db: As
         raise HTTPException(status_code=404)
     result = await db.execute(select(Account).where(Account.id == inst.account_id))
     acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="所属账户不存在")
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     try:
         await client.stop_instance(instance_id, acc.shutdown_mode)
@@ -278,6 +291,8 @@ async def release_instance(instance_id: str, user=Depends(get_current_user), db:
         raise HTTPException(status_code=404)
     result = await db.execute(select(Account).where(Account.id == inst.account_id))
     acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="所属账户不存在")
     client = AliyunClient(acc.access_key_id, acc.access_key_secret, acc.region_id, acc.site_type)
     try:
         await client.delete_instance(instance_id)

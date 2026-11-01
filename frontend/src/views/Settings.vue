@@ -76,7 +76,7 @@
     </div>
 
     <div class="text-center text-xs pt-4 space-y-2">
-      <div class="text-text-muted">AliCDT Manager v1.2</div>
+      <div class="text-text-muted">AliCDT Manager v1.3</div>
       <a v-if="versionInfo.has_update" :href="versionInfo.url" target="_blank"
         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 transition-colors">
         <span class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span>

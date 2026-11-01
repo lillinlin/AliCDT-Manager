@@ -2,7 +2,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from models.database import AsyncSessionLocal, Account, Instance, Log, Settings
 from core.aliyun import AliyunClient
 import httpx
@@ -33,6 +33,22 @@ async def get_setting(key: str, default=None):
         return row.value if row else default
 
 
+async def get_fresh_account(account_id: int):
+    """重新从数据库读取账户，账户已被删除则返回 None"""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Account).where(Account.id == account_id))
+        return result.scalar_one_or_none()
+
+
+async def cleanup_orphan_instances():
+    """清理所属账户已不存在的实例记录"""
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            delete(Instance).where(Instance.account_id.not_in(select(Account.id)))
+        )
+        await db.commit()
+
+
 async def send_tg_notify(message: str):
     bot_token = await get_setting("tg_bot_token")
     chat_id = await get_setting("tg_chat_id")
@@ -57,6 +73,11 @@ async def traffic_check():
 
     for account in accounts:
         try:
+            # 重新读取，账户已被删除就跳过
+            account = await get_fresh_account(account.id)
+            if not account:
+                continue
+
             client = AliyunClient(
                 account.access_key_id, account.access_key_secret,
                 account.region_id, account.site_type,
@@ -89,6 +110,10 @@ async def traffic_check():
                     pass
 
             if trigger_reason and account.instance_id:
+                # 执行停机前再确认一次账户还在
+                if not await get_fresh_account(account.id):
+                    continue
+
                 async with AsyncSessionLocal() as db:
                     inst_result = await db.execute(
                         select(Instance).where(Instance.instance_id == account.instance_id)
@@ -122,11 +147,16 @@ async def keep_alive_check():
         accounts = result.scalars().all()
 
     for account in accounts:
-        if not account.instance_id:
-            continue
-        if account.manual_stopped:
-            continue
         try:
+            # 重新读取，账户已被删除或已关闭保活就跳过
+            account = await get_fresh_account(account.id)
+            if not account or not account.keep_alive:
+                continue
+            if not account.instance_id:
+                continue
+            if account.manual_stopped:
+                continue
+
             client = AliyunClient(
                 account.access_key_id, account.access_key_secret,
                 account.region_id, account.site_type,
@@ -142,9 +172,11 @@ async def keep_alive_check():
                 await db.commit()
 
             if status == "Stopped":
+                # 拉起前再确认一次账户还在
+                if not await get_fresh_account(account.id):
+                    continue
                 try:
                     await client.start_instance(account.instance_id)
-                    # 启动成功，清除库存不足标记
                     if account.nostock_notified:
                         async with AsyncSessionLocal() as db:
                             await db.execute(
@@ -164,7 +196,6 @@ async def keep_alive_check():
                 except Exception as start_err:
                     err_msg = str(start_err)
                     if "NoStock" in err_msg:
-                        # 库存不足，只在第一次通知，之后交给每日汇报
                         if not account.nostock_notified:
                             async with AsyncSessionLocal() as db:
                                 await db.execute(
@@ -192,13 +223,16 @@ async def scheduled_power():
         accounts = result.scalars().all()
 
     for account in accounts:
-        if not account.instance_id:
-            continue
-        client = AliyunClient(
-            account.access_key_id, account.access_key_secret,
-            account.region_id, account.site_type,
-        )
         try:
+            account = await get_fresh_account(account.id)
+            if not account or not account.instance_id:
+                continue
+
+            client = AliyunClient(
+                account.access_key_id, account.access_key_secret,
+                account.region_id, account.site_type,
+            )
+
             if account.auto_stop_time and account.auto_stop_time == now:
                 await client.stop_instance(account.instance_id, account.shutdown_mode)
                 async with AsyncSessionLocal() as db:
@@ -226,6 +260,9 @@ async def scheduled_power():
 
 
 async def sync_instances():
+    # 每次同步前先清理孤儿实例
+    await cleanup_orphan_instances()
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Account).where(Account.enabled == True))
         accounts = result.scalars().all()
@@ -237,7 +274,13 @@ async def sync_instances():
                 account.region_id, account.site_type,
             )
             instances = await client.get_instances()
+
             async with AsyncSessionLocal() as db:
+                # 写入前在同一个事务里确认账户仍然存在（防止同步期间账户被删除）
+                exists = await db.execute(select(Account.id).where(Account.id == account.id))
+                if exists.scalar_one_or_none() is None:
+                    continue
+
                 for inst in instances:
                     result = await db.execute(
                         select(Instance).where(Instance.instance_id == inst["instance_id"])
